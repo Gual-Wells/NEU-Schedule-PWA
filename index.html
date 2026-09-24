@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#f5f7fb" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#0f1115" media="(prefers-color-scheme: dark)" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="课表" />
+  <meta name="format-detection" content="telephone=no" />
+  <title>课表</title>
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
+  <link rel="icon" href="./icons/icon-192.png" />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <main class="shell" id="app" aria-live="polite">
+    <header class="topbar">
+      <div>
+        <div class="eyebrow" id="dateLabel"></div>
+        <h1>课表</h1>
+      </div>
+      <button id="weekButton" class="week-pill" type="button" aria-label="切换教学周"></button>
+    </header>
+
+    <section id="todayView" class="view active" aria-label="今日">
+      <section class="hero-grid">
+        <article class="status-card" id="nextClassCard"></article>
+        <article class="status-card" id="gymNowCard"></article>
+      </section>
+
+      <section class="section-block">
+        <div class="section-title-row">
+          <h2>今天</h2>
+          <span class="section-note" id="todaySummary"></span>
+        </div>
+        <div id="todayCourses" class="course-list"></div>
+      </section>
+
+      <section class="section-block">
+        <div class="section-title-row">
+          <h2>健身房</h2>
+          <span class="section-note" id="gymUpdated"></span>
+        </div>
+        <div id="gymToday" class="gym-strip"></div>
+      </section>
+    </section>
+
+    <section id="weekView" class="view" aria-label="周表">
+      <div class="week-nav">
+        <button id="prevWeek" type="button" aria-label="上一周">‹</button>
+        <div>
+          <strong id="weekTitle"></strong>
+          <small id="weekRange"></small>
+        </div>
+        <button id="nextWeek" type="button" aria-label="下一周">›</button>
+      </div>
+      <div id="weekDays" class="week-days"></div>
+    </section>
+
+    <section id="allView" class="view" aria-label="全部课程">
+      <section class="section-block all-courses-block">
+        <div class="section-title-row">
+          <h2>全部课程</h2>
+          <span class="section-note">班级字段已保留，当前为空</span>
+        </div>
+        <div id="allCourses" class="course-list"></div>
+      </section>
+    </section>
+  </main>
+
+  <nav class="bottom-nav" aria-label="主导航">
+    <button class="nav-item active" data-view="todayView" type="button">
+      <span class="nav-icon">●</span><span>今日</span>
+    </button>
+    <button class="nav-item" data-view="weekView" type="button">
+      <span class="nav-icon">▦</span><span>周表</span>
+    </button>
+    <button class="nav-item" data-view="allView" type="button">
+      <span class="nav-icon">≡</span><span>全部</span>
+    </button>
+  </nav>
+
+  <dialog id="weekDialog">
+    <form method="dialog" class="dialog-card">
+      <div class="dialog-head">
+        <strong>切换教学周</strong>
+        <button value="cancel" class="icon-button" aria-label="关闭">×</button>
+      </div>
+      <div id="weekChoices" class="week-choices"></div>
+    </form>
+  </dialog>
+
+  <script src="./data.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>
