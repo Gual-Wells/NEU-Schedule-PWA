@@ -20,103 +20,48 @@
     <header class="app-header">
       <div>
         <div class="header-date" id="headerDate"></div>
-        <h1 id="headerTitle">课表</h1>
+        <h1>课表</h1>
       </div>
       <button class="header-action" id="jumpToday" type="button" hidden>回本周</button>
     </header>
 
-    <section class="page active" id="schedulePage" aria-label="课表">
-      <div class="week-swipe-zone" id="weekSwipeZone">
-        <div class="week-nav">
-          <button class="round-button" id="prevWeek" type="button" aria-label="上一周">‹</button>
-          <button class="week-center" id="weekPickerButton" type="button" aria-label="选择教学周">
-            <strong id="weekTitle"></strong>
-            <span id="weekRange"></span>
-          </button>
-          <button class="round-button" id="nextWeek" type="button" aria-label="下一周">›</button>
-        </div>
-
-        <div class="day-strip" id="dayStrip" aria-label="选择日期"></div>
+    <section class="week-swipe-zone" id="weekSwipeZone">
+      <div class="week-nav">
+        <button class="round-button" id="prevWeek" type="button" aria-label="上一周">‹</button>
+        <button class="week-center" id="weekPickerButton" type="button" aria-label="选择教学周">
+          <strong id="weekTitle"></strong>
+          <span id="weekRange"></span>
+        </button>
+        <button class="round-button" id="nextWeek" type="button" aria-label="下一周">›</button>
       </div>
-
-      <div class="schedule-toolbar">
-        <div class="segmented" role="tablist" aria-label="课表显示方式">
-          <button class="segment active" data-mode="week" type="button">周表</button>
-          <button class="segment" data-mode="day" type="button">日程</button>
-        </div>
-        <span class="toolbar-hint" id="scheduleHint"></span>
-      </div>
-
-      <section class="week-panel active" id="weekPanel">
-        <div class="timetable-shell">
-          <div class="timetable-scroll" id="timetableScroll" tabindex="0">
-            <div class="timetable-grid" id="timetableGrid"></div>
-          </div>
-        </div>
-        <p class="micro-hint">点课程看完整信息 · 上方左右滑动可换周</p>
-      </section>
-
-      <section class="day-panel" id="dayPanel">
-        <div class="day-summary" id="daySummary"></div>
-        <div class="agenda-list" id="agendaList"></div>
-      </section>
+      <div class="day-strip" id="dayStrip" aria-label="选择日期"></div>
     </section>
 
-    <section class="page" id="gymPage" aria-label="健身房">
-      <div class="gym-hero" id="gymHero"></div>
-      <div class="gym-date-context">
-        <div class="gym-context-copy">
-          <span>结合教学周课表</span>
-          <strong id="gymContextLabel"></strong>
-        </div>
-        <div class="day-strip gym-day-strip" id="gymDayStrip" aria-label="选择健身日期"></div>
+    <div class="schedule-toolbar">
+      <div class="segmented" role="tablist" aria-label="课表显示方式">
+        <button class="segment active" data-mode="week" type="button">周表</button>
+        <button class="segment" data-mode="day" type="button">日程</button>
       </div>
+      <div class="gym-legend" title="浅绿色背景代表健身房开放">
+        <span class="gym-legend-swatch"></span>
+        <span>健身房开放</span>
+      </div>
+    </div>
 
-      <section class="section">
-        <div class="section-head">
-          <div>
-            <span class="section-kicker">结合课表</span>
-            <h2 id="freeTitle">可去健身</h2>
-          </div>
-          <span class="section-note" id="gymUpdated"></span>
+    <section class="week-panel active" id="weekPanel">
+      <div class="timetable-shell">
+        <div class="timetable-scroll" id="timetableScroll" tabindex="0">
+          <div class="timetable-grid" id="timetableGrid"></div>
         </div>
-        <div class="free-window-list" id="freeWindows"></div>
-      </section>
+      </div>
+      <p class="micro-hint">绿色背景＝健身房开放 · 虚线＝开放时刻与课程节次未对齐 · 点课程看详情</p>
+    </section>
 
-      <section class="section">
-        <div class="section-head">
-          <div>
-            <span class="section-kicker">一眼看全周</span>
-            <h2>健身房开放表</h2>
-          </div>
-        </div>
-        <div class="gym-matrix-wrap">
-          <div class="gym-matrix" id="gymMatrix"></div>
-        </div>
-      </section>
-
-      <section class="section compact-section">
-        <div class="section-head">
-          <div>
-            <span class="section-kicker">当天详情</span>
-            <h2>原始开放时段</h2>
-          </div>
-        </div>
-        <div class="gym-day-detail" id="gymDayDetail"></div>
-      </section>
+    <section class="day-panel" id="dayPanel">
+      <div class="day-summary" id="daySummary"></div>
+      <div class="agenda-list" id="agendaList"></div>
     </section>
   </main>
-
-  <nav class="bottom-nav" aria-label="主导航">
-    <button class="nav-item active" data-page="schedulePage" type="button">
-      <span class="nav-icon" aria-hidden="true">▦</span>
-      <span>课表</span>
-    </button>
-    <button class="nav-item" data-page="gymPage" type="button">
-      <span class="nav-icon" aria-hidden="true">◒</span>
-      <span>健身</span>
-    </button>
-  </nav>
 
   <dialog id="courseDialog" class="sheet-dialog">
     <form method="dialog" class="sheet">

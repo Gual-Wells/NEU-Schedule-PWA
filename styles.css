@@ -483,3 +483,260 @@ h2 { margin: 0; font-size: 20px; line-height: 1.2; letter-spacing: -.025em; }
   .page.active, .week-panel.active, .day-panel.active { animation: fadeIn .13s ease-out; }
   @keyframes fadeIn { from { opacity: .45; transform: translateY(2px); } }
 }
+
+
+/* v4: gym availability is part of the timetable, not a separate page. */
+:root {
+  --green-line: rgba(22, 163, 74, .52);
+  --timeline-h: 760px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --green: #66d88a;
+    --green-soft: rgba(91, 209, 125, .11);
+    --green-line: rgba(91, 209, 125, .56);
+  }
+}
+.app-shell {
+  width: min(900px, 100%);
+  padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+}
+.schedule-toolbar {
+  align-items: center;
+}
+.gym-legend {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.gym-legend-swatch {
+  width: 18px;
+  height: 10px;
+  border-radius: 4px;
+  background: var(--green-soft);
+  border: 1px solid var(--green-line);
+}
+.timetable-scroll {
+  max-height: calc(100vh - 230px - env(safe-area-inset-bottom, 0px));
+}
+.timetable-grid {
+  grid-template-columns: 56px repeat(7, minmax(88px, 1fr));
+  grid-template-rows: 48px var(--timeline-h);
+  min-width: 700px;
+}
+.corner-cell {
+  z-index: 20;
+}
+.corner-cell span {
+  color: var(--muted);
+  font-size: 9px;
+}
+.day-head-cell {
+  z-index: 16;
+}
+.time-axis {
+  position: sticky;
+  left: 0;
+  z-index: 14;
+  height: var(--timeline-h);
+  background: var(--surface);
+  border-right: 1px solid var(--line);
+}
+.period-marker,
+.gym-time-label {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+.period-marker {
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  align-items: center;
+  padding: 0 4px;
+  color: var(--muted);
+  font-size: 8px;
+}
+.period-marker strong {
+  color: var(--text);
+  font-size: 10px;
+}
+.period-marker span {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.gym-time-label {
+  z-index: 4;
+  width: auto;
+  right: 2px;
+  left: auto;
+  padding: 1px 3px;
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--green);
+  font-size: 8px;
+  line-height: 1.1;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.gym-time-label.aux {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--green-line) 45%, transparent);
+}
+.day-lane {
+  position: relative;
+  height: var(--timeline-h);
+  border-right: 1px solid var(--line);
+  background: transparent;
+  overflow: hidden;
+}
+.day-lane.selected-col {
+  background: color-mix(in srgb, var(--accent-soft) 30%, transparent);
+}
+.gym-band {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 0;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--green-soft) 90%, transparent),
+    var(--green-soft)
+  );
+  pointer-events: none;
+}
+.gym-band::after {
+  content: "";
+  position: absolute;
+  inset: 0 3px;
+  border-left: 2px solid color-mix(in srgb, var(--green) 34%, transparent);
+  border-radius: 2px;
+}
+.period-guide,
+.gym-guide {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 0;
+  pointer-events: none;
+}
+.period-guide {
+  z-index: 1;
+  border-top: 1px solid var(--line);
+}
+.gym-guide {
+  z-index: 2;
+  border-top: 1px solid var(--green-line);
+}
+.gym-guide.aux {
+  border-top-style: dashed;
+}
+.gym-guide.aligned {
+  opacity: .72;
+}
+.course-block {
+  position: absolute;
+  left: 3px;
+  right: 3px;
+  z-index: 5;
+  min-height: 25px;
+  margin: 0;
+  border: 1px solid rgba(255,255,255,.48);
+  border-radius: 9px;
+  padding: 5px 6px;
+  overflow: hidden;
+  color: #fff;
+  text-align: left;
+  box-shadow: 0 2px 6px rgba(0,0,0,.14);
+}
+.course-block .course-title {
+  font-size: 11px;
+  font-weight: 820;
+  line-height: 1.2;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+.course-block .course-sub {
+  display: block;
+  margin-top: 3px;
+  font-size: 9px;
+  line-height: 1.15;
+  opacity: .92;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.course-block.compact .course-sub {
+  display: none;
+}
+.current-time-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 7;
+  height: 2px;
+  background: #ff4d4f;
+  transform: none;
+  align-self: auto;
+  pointer-events: none;
+}
+.day-summary-top {
+  display: grid;
+  gap: 10px;
+}
+.day-summary strong {
+  font-size: 18px;
+}
+.day-summary span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 4px;
+}
+.day-gym-badge {
+  color: var(--green);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+.free-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 11px;
+}
+.free-chips span {
+  margin: 0;
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: var(--green-soft);
+  color: var(--green);
+  font-size: 10px;
+  font-weight: 720;
+}
+.free-chips .muted-chip {
+  background: var(--surface-2);
+  color: var(--muted);
+}
+.bottom-nav,
+#gymPage,
+.gym-date-context,
+.gym-hero,
+.gym-matrix-wrap,
+.gym-day-detail {
+  display: none !important;
+}
+@media (min-width: 700px) {
+  :root { --timeline-h: 820px; }
+  .timetable-grid { min-width: 0; }
+  .timetable-scroll { max-height: calc(100vh - 220px); }
+}
+@media (max-width: 420px) {
+  :root { --timeline-h: 720px; }
+  .gym-legend { font-size: 10px; }
+}
