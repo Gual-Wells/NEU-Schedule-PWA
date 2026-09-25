@@ -74,6 +74,7 @@ h2 { margin: 0; font-size: 17px; line-height: 1.2; }
 .week-choice,
 .action-button,
 .undo-trigger,
+.undo-all,
 .undo-choices button,
 .detail-skip {
   border: 1px solid #7d9bb9;
@@ -308,11 +309,13 @@ h2 { margin: 0; font-size: 17px; line-height: 1.2; }
 .event-notice.soon .notice-dot { background: #cf8129; }
 .event-notice small { grid-column: 2; color: var(--muted); font-size: 9px; }
 .dashboard-actions { display: flex; flex-wrap: wrap; gap: 5px; padding: 0 10px 9px; }
-.action-button, .undo-trigger, .undo-choices button { padding: 5px 8px; font-size: 10px; }
+.action-button, .undo-trigger, .undo-all, .undo-choices button { padding: 5px 8px; font-size: 10px; }
 .gym-action { border-color: #3f7d47; background: linear-gradient(#bbebad, #73b56f 49%, #4f984e 50%, #85c27d); color: #173f24; }
 .skip-action { border-color: #ab874f; background: linear-gradient(#fff7db, #efd8a6 49%, #d9b978 50%, #f2d9a6); color: #684820; }
-.undo-trigger { margin: 0 10px 9px; }
+.undo-bar { display: flex; flex-wrap: wrap; gap: 5px; padding: 0 10px 9px; }
+.undo-all { border-color: #ab874f; background: linear-gradient(#fff7db, #efd8a6 49%, #d9b978 50%, #f2d9a6); color: #684820; }
 .undo-choices { display: flex; flex-wrap: wrap; gap: 5px; padding: 0 10px 9px; }
+.undo-bar .undo-choices { padding: 0; }
 .day-map { background: #fff; }
 .map-heading { position: sticky; top: 0; z-index: 20; display: flex; justify-content: space-between; gap: 7px; border-bottom: 1px solid #6e91b5; padding: 6px 9px; background: linear-gradient(#edf5fc, #bdd2e7); box-shadow: 0 1px 0 #fff inset; }
 .map-heading strong { color: #214e79; font-size: 11px; }
