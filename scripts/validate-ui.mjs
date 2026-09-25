@@ -54,6 +54,7 @@ assert.match(node('timelineGrid').innerHTML, /16:00–17:40/);
 assert.match(node('timelineGrid').innerHTML, /gym-odd/);
 assert.match(node('timelineGrid').innerHTML, /gym-even/);
 assert.match(node('timelineGrid').innerHTML, /period-slot/);
+assert.match(node('timelineGrid').innerHTML, /class="period-slot" style="top:60%;height:5%"[^>]*><strong>7节<\/strong><span class="period-start">16:00<\/span><span class="period-end">16:45<\/span>/);
 const sundayBand = node('timelineGrid').innerHTML.match(/class="day-lane (gym-(?:odd|even)) [^"]*" style="grid-column:8;grid-row:2"/)?.[1];
 node('nextWeek').listeners.click();
 const nextMondayBand = node('timelineGrid').innerHTML.match(/class="day-lane (gym-(?:odd|even)) [^"]*" style="grid-column:2;grid-row:2"/)?.[1];
@@ -64,6 +65,7 @@ segments[1].listeners.click();
 assert.match(node('dayDashboard').innerHTML, /现在可以去健身/);
 assert.match(node('dayMap').innerHTML, /应用数理统计/);
 assert.match(node('dayMap').innerHTML, /第7–8节 · 16:00–17:40/);
+assert.match(node('dayMap').innerHTML, /class="map-period" style="top:60%;height:5%"[^>]*><strong>7节<\/strong><span class="period-start">16:00<\/span><span class="period-end">16:45<\/span>/);
 assert.match(node('dayMap').innerHTML, /day-progress/);
 
 node('dayMap').listeners.click({ target: { closest: selector => selector === '[data-course]' ? { dataset: { course: '4' } } : null } });

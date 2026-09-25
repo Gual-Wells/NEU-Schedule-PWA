@@ -31,4 +31,4 @@
 
 纯 HTML / CSS / JavaScript，无框架、无广告、无第三方运行时依赖。GitHub Pages 由 `.github/workflows/pages.yml` 自动部署。
 
-静态资源使用版本化 URL；Service Worker 版本为 `neu-schedule-v8`，导航优先网络、离线回退缓存，避免发布新版本后继续显示旧 JS/CSS。部署前检查数据约束和日程状态切换。
+静态资源使用版本化 URL；Service Worker 版本为 `neu-schedule-v9`，导航优先网络、离线回退缓存，避免发布新版本后继续显示旧 JS/CSS。部署前检查数据约束和日程状态切换。

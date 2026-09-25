@@ -212,7 +212,7 @@
     for (let period = 1; period <= 12; period++) {
       const start = timeToMinutes(D.periods[period][0]);
       const end = timeToMinutes(D.periods[period][1]);
-      pieces.push(`<div class="period-slot" style="top:${pct(start)}%;height:${pct(end) - pct(start)}%"><strong>${period}节</strong><span>${D.periods[period][0]}</span><span>${D.periods[period][1]}</span></div>`);
+      pieces.push(`<div class="period-slot" style="top:${pct(start)}%;height:${pct(end) - pct(start)}%"><strong>${period}节</strong><span class="period-start">${D.periods[period][0]}</span><span class="period-end">${D.periods[period][1]}</span></div>`);
     }
     for (const boundary of gymBoundaries) {
       if (boundary <= DAY_START || boundary >= DAY_END || academicBoundaries.has(boundary)) continue;
@@ -288,7 +288,7 @@
         const focusMinutes = selectedWeek === currentWeek() && currentMinutes >= DAY_START && currentMinutes <= DAY_END
           ? currentMinutes
           : 8 * 60 + 20;
-        const contentHeight = $('timelineGrid').getBoundingClientRect().height - 52;
+        const contentHeight = $('timelineGrid').querySelector('.day-lane').getBoundingClientRect().height;
         const target = (pct(focusMinutes) / 100) * contentHeight - scroll.clientHeight * 0.32;
         scroll.scrollTop = Math.max(0, target);
         firstTimelineRender = false;
@@ -379,7 +379,7 @@
     const parts = ['<div class="map-heading"><strong>当日时间图</strong><span>07:00–22:00 · 课程与健身房</span></div><div class="day-map-inner"><div class="map-axis">'];
     for (let n = 1; n <= 12; n++) {
       const [start, end] = D.periods[n];
-      parts.push(`<div class="map-period" style="top:${pct(timeToMinutes(start))}%"><strong>${n}节</strong><span>${start}–${end}</span></div>`);
+      parts.push(`<div class="map-period" style="top:${pct(timeToMinutes(start))}%;height:${pct(timeToMinutes(end)) - pct(timeToMinutes(start))}%"><strong>${n}节</strong><span class="period-start">${start}</span><span class="period-end">${end}</span></div>`);
     }
     parts.push('</div>');
     parts.push(`<div class="map-track ${gymVersion(selectedDay, selectedWeek)}">`);
@@ -403,7 +403,8 @@
     $('dayMap').innerHTML = parts.join('');
     if (dayFocus) requestAnimationFrame(() => {
       const panel = $('dayMap');
-      const focus = state.live && state.minute >= DAY_START && state.minute <= DAY_END ? pct(state.minute) / 100 * 900 : 0;
+      const focus = state.live && state.minute >= DAY_START && state.minute <= DAY_END
+        ? pct(state.minute) / 100 * panel.querySelector('.day-map-inner').getBoundingClientRect().height : 0;
       panel.scrollTop = Math.max(0, focus - panel.clientHeight * .55);
       dayFocus = false;
     });
@@ -548,7 +549,7 @@
   function boot() {
     setupInteractions();
     renderAll();
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js?v=8', { updateViaCache: 'none' }).catch(() => {});
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js?v=9', { updateViaCache: 'none' }).catch(() => {});
     setInterval(() => {
       renderHeader();
       if (viewMode === 'week') renderWeekView();

@@ -188,21 +188,20 @@ h2 { margin: 0; font-size: 17px; line-height: 1.2; }
 .day-head.selected { background: linear-gradient(#fff6d8, #f1cf88); color: #70420d; }
 .day-head.today strong { text-decoration: underline; text-decoration-thickness: 2px; }
 .time-axis { position: relative; z-index: 8; grid-column: 1; grid-row: 2; border-right: 1px solid #82a0be; background: #e8eff7; }
-.period-slot {
+.period-slot, .map-period {
   position: absolute;
-  left: 2px;
-  right: 2px;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: end;
+  display: grid;
+  place-items: center;
   border-top: 1px solid #a0b6cc;
-  line-height: 1.08;
+  border-bottom: 1px solid #a0b6cc;
+  line-height: 1;
   pointer-events: none;
 }
-.period-slot strong { color: #204d78; font-size: 9px; }
-.period-slot span { color: #61788c; font-size: 7px; font-variant-numeric: tabular-nums; }
-.period-slot span:last-child { color: #244f78; }
+.period-slot { left: 2px; right: 2px; }
+.period-slot strong, .map-period strong { color: #204d78; font-size: 9px; }
+.period-slot span, .map-period span { position: absolute; right: 1px; color: #244f78; font-size: 7px; font-variant-numeric: tabular-nums; }
+.period-slot .period-start, .map-period .period-start { top: 1px; }
+.period-slot .period-end, .map-period .period-end { bottom: 1px; }
 .gym-time-tag {
   position: absolute;
   z-index: 9;
@@ -315,12 +314,12 @@ h2 { margin: 0; font-size: 17px; line-height: 1.2; }
 .map-heading { position: sticky; top: 0; z-index: 20; display: flex; justify-content: space-between; gap: 7px; border-bottom: 1px solid #6e91b5; padding: 6px 9px; background: linear-gradient(#edf5fc, #bdd2e7); box-shadow: 0 1px 0 #fff inset; }
 .map-heading strong { color: #214e79; font-size: 11px; }
 .map-heading span { color: #5d748c; font-size: 9px; }
-.day-map-inner { display: grid; grid-template-columns: 73px minmax(0, 1fr); height: 900px; }
+.day-map-inner { display: grid; grid-template-columns: 73px minmax(0, 1fr); height: var(--timeline-height); }
 .map-axis, .map-track { position: relative; }
 .map-axis { border-right: 1px solid #8ba8c4; background: #e8eff7; }
-.map-period { position: absolute; left: 4px; right: 3px; display: grid; gap: 1px; border-top: 1px solid #9fb6cd; padding-top: 2px; }
-.map-period strong { color: #214e79; font-size: 10px; }
-.map-period span { color: #56718b; font-size: 8px; font-variant-numeric: tabular-nums; }
+.map-period { left: 4px; right: 3px; }
+.map-period strong { font-size: 10px; }
+.map-period span { font-size: 8px; }
 .map-track { overflow: hidden; background: #fff; }
 .map-gym-edge { position: absolute; z-index: 2; right: 3px; transform: translateY(-50%); border: 1px solid #75a479; padding: 1px 3px; background: #e6f5df; color: #286b3c; font-size: 8px; }
 .map-gym-edge.end { color: #53745a; }
