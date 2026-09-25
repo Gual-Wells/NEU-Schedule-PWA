@@ -1,4 +1,4 @@
-const CACHE = 'neu-schedule-v2';
+const CACHE = 'neu-schedule-v3';
 const CORE = [
   './',
   './index.html',
