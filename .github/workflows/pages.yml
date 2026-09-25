@@ -23,6 +23,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+      - name: Validate static app
+        run: |
+          node --check app.js
+          node --check sw.js
+          node scripts/validate.mjs
       - name: Setup Pages
         uses: actions/configure-pages@v5
       - name: Upload static site

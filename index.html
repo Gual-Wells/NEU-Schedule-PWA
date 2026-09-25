@@ -3,32 +3,33 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#f6f7fb" media="(prefers-color-scheme: light)" />
-  <meta name="theme-color" content="#101114" media="(prefers-color-scheme: dark)" />
+  <meta name="theme-color" content="#f5f7fb" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#090c13" media="(prefers-color-scheme: dark)" />
+  <meta name="color-scheme" content="light dark" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="课表" />
   <meta name="format-detection" content="telephone=no" />
   <title>课表</title>
-  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="manifest" href="./manifest.webmanifest?v=6" />
   <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
   <link rel="icon" href="./icons/icon-192.png" />
-  <link rel="stylesheet" href="./styles.css" />
+  <link rel="stylesheet" href="./styles.css?v=6" />
 </head>
 <body>
   <main class="app-shell" id="app">
     <header class="app-header">
       <div>
-        <div class="header-date" id="headerDate"></div>
+        <p class="header-meta" id="headerMeta"></p>
         <h1>课表</h1>
       </div>
-      <button class="header-action" id="jumpToday" type="button" hidden>回本周</button>
+      <button class="ghost-button" id="jumpToday" type="button" hidden>回到今天</button>
     </header>
 
-    <section class="week-swipe-zone" id="weekSwipeZone">
-      <div class="week-nav">
+    <section class="week-card" id="weekCard">
+      <div class="week-nav-row" id="weekSwipeZone">
         <button class="round-button" id="prevWeek" type="button" aria-label="上一周">‹</button>
-        <button class="week-center" id="weekPickerButton" type="button" aria-label="选择教学周">
+        <button class="week-summary" id="weekPickerButton" type="button" aria-label="选择教学周">
           <strong id="weekTitle"></strong>
           <span id="weekRange"></span>
         </button>
@@ -37,28 +38,28 @@
       <div class="day-strip" id="dayStrip" aria-label="选择日期"></div>
     </section>
 
-    <div class="schedule-toolbar">
-      <div class="segmented" role="tablist" aria-label="课表显示方式">
+    <section class="toolbar">
+      <div class="segmented" role="tablist" aria-label="显示方式">
         <button class="segment active" data-mode="week" type="button">周表</button>
         <button class="segment" data-mode="day" type="button">日程</button>
       </div>
-      <div class="gym-legend" title="浅绿色背景代表健身房开放">
-        <span class="gym-legend-swatch"></span>
-        <span>健身房开放</span>
+      <div class="toolbar-side">
+        <div class="legend-chip"><span class="legend-swatch"></span><span>健身房开放</span></div>
+        <span class="toolbar-note" id="toolbarNote"></span>
       </div>
-    </div>
-
-    <section class="week-panel active" id="weekPanel">
-      <div class="timetable-shell">
-        <div class="timetable-scroll" id="timetableScroll" tabindex="0">
-          <div class="timetable-grid" id="timetableGrid"></div>
-        </div>
-      </div>
-      <p class="micro-hint">绿色背景＝健身房开放 · 虚线＝开放时刻与课程节次未对齐 · 点课程看详情</p>
     </section>
 
-    <section class="day-panel" id="dayPanel">
-      <div class="day-summary" id="daySummary"></div>
+    <section class="panel active week-panel" id="weekPanel">
+      <div class="timeline-shell">
+        <div class="timeline-scroll" id="timelineScroll" tabindex="0">
+          <div class="timeline-grid" id="timelineGrid"></div>
+        </div>
+      </div>
+      <p class="micro-copy">浅绿＝健身房开放 · 绿色虚线＝非课程边界的开放时刻 · 红线＝现在</p>
+    </section>
+
+    <section class="panel day-panel" id="dayPanel">
+      <article class="day-overview" id="dayOverview"></article>
       <div class="agenda-list" id="agendaList"></div>
     </section>
   </main>
@@ -68,7 +69,7 @@
       <div class="sheet-grabber"></div>
       <div class="sheet-head">
         <div>
-          <span class="section-kicker">课程详情</span>
+          <span class="sheet-kicker">课程详情</span>
           <h2 id="courseDetailTitle"></h2>
         </div>
         <button class="close-button" value="cancel" aria-label="关闭">×</button>
@@ -82,16 +83,16 @@
       <div class="sheet-grabber"></div>
       <div class="sheet-head">
         <div>
-          <span class="section-kicker">教学周</span>
+          <span class="sheet-kicker">教学周</span>
           <h2>跳到某一周</h2>
         </div>
         <button class="close-button" value="cancel" aria-label="关闭">×</button>
       </div>
-      <div class="week-picker-grid" id="weekChoices"></div>
+      <div id="weekChoices" class="week-picker-grid"></div>
     </form>
   </dialog>
 
-  <script src="./data.js"></script>
-  <script src="./app.js"></script>
+  <script src="./data.js?v=6"></script>
+  <script src="./app.js?v=6"></script>
 </body>
 </html>

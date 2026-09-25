@@ -1,11 +1,11 @@
-const CACHE = 'neu-schedule-v4';
+const CACHE = 'neu-schedule-v6';
 const CORE = [
   './',
   './index.html',
-  './styles.css',
-  './data.js',
-  './app.js',
-  './manifest.webmanifest',
+  './styles.css?v=6',
+  './data.js?v=6',
+  './app.js?v=6',
+  './manifest.webmanifest?v=6',
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/apple-touch-icon.png'
@@ -18,7 +18,7 @@ self.addEventListener('install', event => {
 self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys()
-      .then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
+      .then(keys => Promise.all(keys.filter(key => key !== CACHE).map(key => caches.delete(key))))
       .then(() => self.clients.claim())
   );
 });
@@ -30,8 +30,7 @@ self.addEventListener('fetch', event => {
     event.respondWith(
       fetch(event.request)
         .then(response => {
-          const copy = response.clone();
-          caches.open(CACHE).then(cache => cache.put('./index.html', copy));
+          if (response.ok) caches.open(CACHE).then(cache => cache.put('./index.html', response.clone()));
           return response;
         })
         .catch(() => caches.match('./index.html'))
@@ -41,11 +40,11 @@ self.addEventListener('fetch', event => {
 
   event.respondWith(
     caches.match(event.request).then(cached => {
-      const network = fetch(event.request).then(response => {
+      if (cached) return cached;
+      return fetch(event.request).then(response => {
         if (response.ok) caches.open(CACHE).then(cache => cache.put(event.request, response.clone()));
         return response;
-      }).catch(() => cached);
-      return cached || network;
+      });
     })
   );
 });
