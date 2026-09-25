@@ -35,6 +35,13 @@
   };
   const clamp = (n, min, max) => Math.min(max, Math.max(min, n));
   const pct = (mins) => clamp(((mins - DAY_START) / DAY_SPAN) * 100, 0, 100);
+  const gymVersion = day => day % 2 ? 'gym-odd' : 'gym-even';
+  const skipKey = (date, course) => `${dateKey(date)}:${course._id}`;
+  let skipped;
+  try { skipped = new Set(JSON.parse(localStorage.getItem('neu-schedule-skipped-v7') || '[]')); }
+  catch (_) { skipped = new Set(); }
+  let gymSessionDate = '';
+  try { gymSessionDate = localStorage.getItem('neu-schedule-gym-session-v7') || ''; } catch (_) {}
 
   function expandWeeks(spec) {
     const out = new Set();
@@ -71,15 +78,20 @@
   const weekStart = (week) => addDays(parseLocalDate(D.semester.week1Monday), (week - 1) * 7);
   const periodTime = (course) => ({ start: D.periods[course.start][0], end: D.periods[course.end][1] });
 
-  function activeCourses(day, week) {
+  function rawCourses(day, week) {
     return D.courses
       .filter(course => course.weekday === day && course._weekSet.has(week))
       .sort((a, b) => a.start - b.start || a.end - b.end);
+  }
+  function activeCourses(day, week) {
+    const date = addDays(weekStart(week), day - 1);
+    return rawCourses(day, week).filter(course => !skipped.has(skipKey(date, course)));
   }
 
   function gymSlots(day) {
     return (D.gym.availability[day] || []).map(([start, end]) => [timeToMinutes(start), timeToMinutes(end)]);
   }
+  const isInside = (intervals, minute) => intervals.some(([start, end]) => start <= minute && minute < end);
 
   function dayFreeWindows(day, week) {
     let intervals = gymSlots(day).map(([start, end]) => [start, end]);
@@ -98,16 +110,9 @@
           if (occupiedEnd < end) next.push([occupiedEnd, end]);
         }
       }
-      intervals = next.filter(([start, end]) => end - start >= 20);
+      intervals = next.filter(([start, end]) => end > start);
     }
     return intervals;
-  }
-
-  function formatDuration(mins) {
-    if (mins < 60) return `${mins}m`;
-    const hours = Math.floor(mins / 60);
-    const rest = mins % 60;
-    return rest ? `${hours}h ${rest}m` : `${hours}h`;
   }
 
   function shortCourseName(name, span) {
@@ -125,10 +130,6 @@
     return span <= 2 && value.length > 8 ? `${value.slice(0, 7)}…` : value;
   }
 
-  function intervalsEqual(a, b) {
-    return a.length === b.length && a.every((item, i) => item[0] === b[i][0] && item[1] === b[i][1]);
-  }
-
   const periodStarts = Object.values(D.periods).map(([start]) => timeToMinutes(start));
   const periodEnds = Object.values(D.periods).map(([, end]) => timeToMinutes(end));
   const academicBoundaries = new Set([...periodStarts, ...periodEnds]);
@@ -136,11 +137,13 @@
 
   let selectedWeek = currentWeek();
   let selectedDay = mondayIndex(nowDate());
+  const selectedDate = () => addDays(weekStart(selectedWeek), selectedDay - 1);
   function readStorage(key) { try { return localStorage.getItem(key); } catch (_) { return null; } }
   function writeStorage(key, value) { try { localStorage.setItem(key, value); } catch (_) {} }
   let viewMode = readStorage('neu-schedule-view-mode') === 'day' ? 'day' : 'week';
   let timelineScrollTop = null;
   let firstTimelineRender = true;
+  let dayFocus = true;
 
   function renderHeader() {
     const now = nowDate();
@@ -170,6 +173,7 @@
     $('dayStrip').querySelectorAll('.day-chip').forEach(button => {
       button.addEventListener('click', () => {
         selectedDay = Number(button.dataset.day);
+        dayFocus = true;
         renderAll();
       });
     });
@@ -191,7 +195,7 @@
     const weekMonday = weekStart(selectedWeek);
     const now = nowDate();
     const todayKey = dateKey(now);
-    const pieces = ['<div class="corner-head"><span>时间</span></div>'];
+    const pieces = ['<div class="corner-head"><span>节次·时间</span></div>'];
 
     for (let day = 1; day <= 7; day++) {
       const date = addDays(weekMonday, day - 1);
@@ -203,21 +207,17 @@
     pieces.push('<div class="time-axis" style="grid-column:1;grid-row:2">');
     for (let period = 1; period <= 12; period++) {
       const start = timeToMinutes(D.periods[period][0]);
-      const hasNearGym = gymBoundaries.some(boundary => boundary < start && start - boundary <= 15);
-      pieces.push(`<div class="period-label ${hasNearGym ? 'after-near-gym' : ''}" style="top:${pct(start)}%"><strong>${period}</strong><span>${D.periods[period][0]}</span></div>`);
+      const end = timeToMinutes(D.periods[period][1]);
+      pieces.push(`<div class="period-slot" style="top:${pct(start)}%;height:${pct(end) - pct(start)}%"><strong>${period}节</strong><span>${D.periods[period][0]}</span><span>${D.periods[period][1]}</span></div>`);
     }
     for (const boundary of gymBoundaries) {
-      if (boundary < DAY_START || boundary > DAY_END) continue;
-      const aligned = academicBoundaries.has(boundary);
-      const nextPeriod = periodStarts.find(start => start > boundary);
-      const nearNext = nextPeriod != null && nextPeriod - boundary <= 15;
-      const edgeTop = boundary === DAY_START;
-      pieces.push(`<div class="gym-time-tag ${aligned ? 'aligned' : 'aux'} ${nearNext ? 'near-next' : ''} ${edgeTop ? 'edge-top' : ''}" style="top:${pct(boundary)}%">${minutesToTime(boundary)}</div>`);
+      if (boundary <= DAY_START || boundary >= DAY_END || academicBoundaries.has(boundary)) continue;
+      pieces.push(`<div class="gym-time-tag aux" style="top:${pct(boundary)}%">${minutesToTime(boundary)}</div>`);
     }
     pieces.push('</div>');
 
     for (let day = 1; day <= 7; day++) {
-      pieces.push(`<div class="day-lane ${day === selectedDay ? 'selected-col' : ''}" style="grid-column:${day + 1};grid-row:2" data-day="${day}">`);
+      pieces.push(`<div class="day-lane ${gymVersion(day)} ${day === selectedDay ? 'selected-col' : ''}" style="grid-column:${day + 1};grid-row:2" data-day="${day}">`);
 
       for (const [start, end] of gymSlots(day)) {
         pieces.push(`<div class="gym-band" style="top:${pct(start)}%;height:${pct(end) - pct(start)}%"></div>`);
@@ -243,11 +243,12 @@
         const duration = end - start;
         pieces.push(`<button class="course-block ${duration < 95 ? 'compact' : ''}" type="button" data-course="${course._id}" style="top:${pct(start)}%;height:${pct(end) - pct(start)}%;background:${course._color}">
           <span class="course-title">${escapeHtml(shortCourseName(course.name, course.end - course.start + 1))}</span>
-          <span class="course-sub">${escapeHtml(course.location)}</span>
+          <span class="course-period">第${course.start}–${course.end}节</span>
+          <span class="course-time">${time.start}–${time.end}</span>
         </button>`);
       }
 
-      if (selectedWeek === currentWeek() && day === mondayIndex(now)) {
+      if (dateKey(addDays(weekMonday, day - 1)) === dateKey(now)) {
         const currentMinutes = now.getHours() * 60 + now.getMinutes();
         if (currentMinutes >= DAY_START && currentMinutes <= DAY_END) {
           pieces.push(`<div class="current-time-line" style="top:${pct(currentMinutes)}%"></div>`);
@@ -264,6 +265,7 @@
       button.addEventListener('click', () => {
         selectedDay = Number(button.dataset.day);
         viewMode = 'day';
+        dayFocus = true;
         writeStorage('neu-schedule-view-mode', viewMode);
         renderAll();
       });
@@ -292,47 +294,114 @@
     });
   }
 
-  function renderDayView() {
-    const start = weekStart(selectedWeek);
-    const date = addDays(start, selectedDay - 1);
-    const courses = activeCourses(selectedDay, selectedWeek);
+  function persistSkipped() { writeStorage('neu-schedule-skipped-v7', JSON.stringify([...skipped])); }
+  function startGymSession() {
+    const minute = nowDate().getHours() * 60 + nowDate().getMinutes();
+    const slot = gymSlots(selectedDay).find(([start, end]) => start <= minute && minute < end);
+    gymSessionDate = slot ? `${dateKey(selectedDate())}|${slot[1]}` : '';
+    writeStorage('neu-schedule-gym-session-v7', gymSessionDate);
+  }
+  function skipCourse(course, gym = false) {
+    skipped.add(skipKey(selectedDate(), course));
+    persistSkipped();
+    if (gym) startGymSession();
+    renderAll();
+  }
+  function dayState(date, courses) {
+    const now = nowDate();
+    const live = dateKey(date) === dateKey(now);
+    const minute = now.getHours() * 60 + now.getMinutes();
     const open = gymSlots(selectedDay);
     const free = dayFreeWindows(selectedDay, selectedWeek);
-    const sameAsOpen = intervalsEqual(open, free);
-
-    const freeChips = free.length
-      ? free.map(([s, e]) => `<span>${minutesToTime(s)}–${minutesToTime(e)} · ${formatDuration(e - s)}</span>`).join('')
-      : '<span class="muted-chip">没有可直接去健身的空档</span>';
-
-    const rawOpen = open.length ? open.map(([s, e]) => `${minutesToTime(s)}–${minutesToTime(e)}`).join(' / ') : '暂无开放时段';
-    const gymRows = sameAsOpen
-      ? `<div class="info-row"><span class="info-label">可去健身</span><div class="free-chips">${freeChips}</div><p class="sub-note">与当天课程无冲突 · 表更新 ${D.gym.updated.replaceAll('-', '.')}</p></div>`
-      : `<div class="info-row"><span class="info-label">健身房开放</span><span class="info-value">${rawOpen}</span></div>
-         <div class="info-row"><span class="info-label">扣除课程后可去</span><div class="free-chips">${freeChips}</div></div>`;
-
-    $('dayOverview').innerHTML = `
-      <div class="day-overview-top">
-        <div><strong>${weekdayLong[selectedDay]} · ${fmtMD.format(date)}</strong><span>第 ${selectedWeek} 周 · ${courses.length ? `${courses.length} 段课程` : '没有课程'}</span></div>
-        <div class="status-badge">${dateKey(date) === dateKey(nowDate()) && selectedWeek === currentWeek() ? '今天' : '日程'}</div>
-      </div>
-      ${gymRows}`;
-
-    if (!courses.length) {
-      $('agendaList').innerHTML = '<div class="empty-state">这一天没有课程。健身房时间已经在上方整理好。</div>';
-      return;
+    if (!live) return { live, minute, title: '查看这一天', subtitle: '课程与健身房按真实时间排列', notices: [], actions: '' };
+    const ongoing = courses.find(course => {
+      const t = periodTime(course);
+      return timeToMinutes(t.start) <= minute && minute < timeToMinutes(t.end);
+    });
+    const soon = courses.filter(course => {
+      const start = timeToMinutes(periodTime(course).start);
+      return start > minute && start - minute <= 30;
+    });
+    const openNow = isInside(open, minute);
+    const freeNow = isInside(free, minute);
+    const gymActive = gymSessionDate.startsWith(`${dateKey(date)}|`) && minute < Number(gymSessionDate.split('|')[1]) && openNow;
+    const notices = [];
+    if (ongoing) {
+      const end = timeToMinutes(periodTime(ongoing).end);
+      notices.push({ kind: 'class', text: `正在上 ${ongoing.name} · ${ongoing.location}`, note: ongoing.note });
+      if (end - minute <= 30) notices.push({ kind: 'soon', text: `${end - minute} 分钟后下课` });
     }
-
-    $('agendaList').innerHTML = courses.map(course => {
-      const time = periodTime(course);
-      return `<button class="agenda-card" type="button" data-course="${course._id}">
-        <div class="agenda-time"><strong>${time.start}</strong><span>${time.end}<br>${course.start}-${course.end}节</span></div>
-        <div class="agenda-bar" style="background:${course._color}"></div>
-        <div class="agenda-main"><div class="agenda-title">${escapeHtml(course.name)}</div><div class="agenda-meta">${escapeHtml(course.location)} · ${escapeHtml(course.teacher)}${course.className ? ` · ${escapeHtml(course.className)}` : ''}</div></div>
-      </button>`;
-    }).join('');
-
-    $('agendaList').querySelectorAll('.agenda-card').forEach(button => {
-      button.addEventListener('click', () => openCourse(Number(button.dataset.course)));
+    for (const course of soon) {
+      const start = timeToMinutes(periodTime(course).start);
+      notices.push({ kind: 'soon', text: `${start - minute} 分钟后去 ${course.location} 上${course.name}`, note: course.note });
+    }
+    if (gymActive) notices.push({ kind: 'gym', text: '正在健身' });
+    else if (freeNow) notices.push({ kind: 'gym', text: '健身房开放，现在可以去' });
+    const nextFree = free.find(([start]) => start > minute && start - minute <= 30);
+    if (nextFree) {
+      const physicalOpening = open.some(([start]) => start === nextFree[0]);
+      notices.push({ kind: 'soon', text: `${nextFree[0] - minute} 分钟后${physicalOpening ? '健身房开放' : '可以去健身'}` });
+    }
+    const closing = open.find(([start, end]) => start <= minute && minute < end && end - minute <= 30);
+    if (closing) notices.push({ kind: 'soon', text: `健身房 ${closing[1] - minute} 分钟后关闭` });
+    let actions = '';
+    if (freeNow) actions += `<button type="button" class="action-button gym-action" data-action="${gymActive ? 'end-gym' : 'start-gym'}">${gymActive ? '结束健身' : '开始健身'}</button>`;
+    for (const course of [ongoing, ...soon].filter(Boolean)) {
+      const t = periodTime(course);
+      const start = timeToMinutes(t.start), end = timeToMinutes(t.end);
+      const overlap = open.some(([a, b]) => start < b && end > a);
+      actions += `<button type="button" class="action-button skip-action" data-skip="${course._id}" data-gym="${overlap && openNow ? 'yes' : 'no'}">${overlap && openNow ? '翘课去健身' : `翘掉${shortCourseName(course.name, course.end - course.start + 1)}`}</button>`;
+    }
+    const title = ongoing ? `正在上 ${shortCourseName(ongoing.name, ongoing.end - ongoing.start + 1)}` : gymActive ? '正在健身' : freeNow ? '现在可以去健身' : '当前没有安排';
+    return { live, minute, title, subtitle: `${minutesToTime(minute)} · ${notices.length ? '当前与即将发生' : '看看今天的时间图'}`, notices, actions };
+  }
+  function renderDayView() {
+    const date = selectedDate();
+    const courses = activeCourses(selectedDay, selectedWeek);
+    const state = dayState(date, courses);
+    const now = nowDate();
+    const hourAngle = (now.getHours() % 12 + now.getMinutes() / 60) * 30;
+    const minuteAngle = now.getMinutes() * 6;
+    const skipCount = rawCourses(selectedDay, selectedWeek).filter(course => skipped.has(skipKey(date, course))).length;
+    $('dayDashboard').innerHTML = `
+      <div class="dashboard-date"><strong>${weekdayLong[selectedDay]} · ${fmtMD.format(date)}</strong><span>第 ${selectedWeek} 周 · ${courses.length} 段课程</span></div>
+      <div class="now-row">
+        <div class="clock" aria-label="当前时间 ${minutesToTime(now.getHours() * 60 + now.getMinutes())}"><i class="hand hour" style="--rotation:${hourAngle}deg"></i><i class="hand minute" style="--rotation:${minuteAngle}deg"></i><i class="clock-center"></i></div>
+        <div class="now-text"><span class="clock-digital">${minutesToTime(now.getHours() * 60 + now.getMinutes())}</span><h2>${escapeHtml(state.title)}</h2><p>${escapeHtml(state.subtitle)}</p></div>
+      </div>
+      ${state.notices.length ? `<div class="event-notices">${state.notices.map(n => `<div class="event-notice ${n.kind}"><span class="notice-dot"></span><span>${escapeHtml(n.text)}</span>${n.note ? `<small>${escapeHtml(n.note)}</small>` : ''}</div>`).join('')}</div>` : ''}
+      ${state.actions ? `<div class="dashboard-actions">${state.actions}</div>` : ''}
+      ${skipCount ? `<button type="button" class="undo-trigger" id="undoTrigger">已跳过 ${skipCount} 节 · 撤销</button>` : ''}`;
+    const parts = ['<div class="map-heading"><strong>当日时间图</strong><span>07:00–22:00 · 课程与健身房</span></div><div class="day-map-inner"><div class="map-axis">'];
+    for (let n = 1; n <= 12; n++) {
+      const [start, end] = D.periods[n];
+      parts.push(`<div class="map-period" style="top:${pct(timeToMinutes(start))}%"><strong>${n}节</strong><span>${start}–${end}</span></div>`);
+    }
+    parts.push('</div>');
+    parts.push(`<div class="map-track ${gymVersion(selectedDay)}">`);
+    for (const [start, end] of gymSlots(selectedDay)) {
+      parts.push(`<div class="gym-band" style="top:${pct(start)}%;height:${pct(end) - pct(start)}%"></div>`);
+      parts.push(`<div class="map-gym-edge" style="top:${pct(start)}%">健身 ${minutesToTime(start)}开始</div><div class="map-gym-edge end" style="top:${pct(end)}%">${minutesToTime(end)}结束</div>`);
+    }
+    for (const [start, end] of Object.values(D.periods)) {
+      parts.push(`<div class="period-guide" style="top:${pct(timeToMinutes(start))}%"></div><div class="period-guide minor" style="top:${pct(timeToMinutes(end))}%"></div>`);
+    }
+    for (const course of courses) {
+      const t = periodTime(course);
+      const start = timeToMinutes(t.start), end = timeToMinutes(t.end);
+      parts.push(`<button type="button" class="map-course" data-course="${course._id}" style="top:${pct(start)}%;height:${pct(end) - pct(start)}%;--course-color:${course._color}">
+        <strong>${escapeHtml(course.name)}</strong><span>第${course.start}–${course.end}节 · ${t.start}–${t.end}</span><span>${escapeHtml(course.location)}${course.note ? ` · ${escapeHtml(course.note)}` : ''}</span>
+      </button>`);
+    }
+    if (state.live && state.minute >= DAY_START && state.minute <= DAY_END)
+      parts.push(`<div class="day-progress" style="height:${pct(state.minute)}%"></div><div class="day-now-line" style="top:${pct(state.minute)}%"><span>${minutesToTime(state.minute)}</span></div>`);
+    parts.push('</div></div>');
+    $('dayMap').innerHTML = parts.join('');
+    if (dayFocus) requestAnimationFrame(() => {
+      const panel = $('dayMap');
+      const focus = state.live && state.minute >= DAY_START && state.minute <= DAY_END ? pct(state.minute) / 100 * 900 : 0;
+      panel.scrollTop = Math.max(0, focus - panel.clientHeight * .55);
+      dayFocus = false;
     });
   }
 
@@ -346,8 +415,10 @@
       detail('地点', course.location),
       detail('教师', course.teacher),
       detail('周数', `第 ${course.weeks} 周`),
-      detail('班级', course.className || '—', true)
+      ...(course.className ? [detail('班级', course.className, true)] : []),
+      ...(course.note ? [detail('备注', course.note, true)] : [])
     ].join('');
+    $('skipCourseButton').dataset.course = String(id);
     $('courseDialog').showModal();
   }
 
@@ -364,6 +435,7 @@
     $('weekChoices').querySelectorAll('.week-choice').forEach(button => {
       button.addEventListener('click', () => {
         selectedWeek = Number(button.dataset.week);
+        dayFocus = true;
         $('weekDialog').close();
         renderAll();
       });
@@ -373,12 +445,14 @@
 
   function changeWeek(delta) {
     selectedWeek = clamp(selectedWeek + delta, 1, D.semester.totalWeeks);
+    dayFocus = true;
     renderAll();
   }
 
   function jumpToday() {
     selectedWeek = currentWeek();
     selectedDay = mondayIndex(nowDate());
+    dayFocus = true;
     renderAll();
   }
 
@@ -387,10 +461,53 @@
     $('nextWeek').addEventListener('click', () => changeWeek(1));
     $('weekPickerButton').addEventListener('click', showWeekPicker);
     $('jumpToday').addEventListener('click', jumpToday);
+    $('skipCourseButton').addEventListener('click', () => {
+      const course = D.courses[Number($('skipCourseButton').dataset.course)];
+      if (!course) return;
+      $('courseDialog').close();
+      skipCourse(course);
+    });
+    $('dayMap').addEventListener('click', event => {
+      const button = event.target.closest('[data-course]');
+      if (button) openCourse(Number(button.dataset.course));
+    });
+    $('dayDashboard').addEventListener('click', event => {
+      const skip = event.target.closest('[data-skip]');
+      if (skip) {
+        skipCourse(D.courses[Number(skip.dataset.skip)], skip.dataset.gym === 'yes');
+        return;
+      }
+      const action = event.target.closest('[data-action]');
+      if (action) {
+        if (action.dataset.action === 'start-gym') startGymSession();
+        else {
+          gymSessionDate = '';
+          writeStorage('neu-schedule-gym-session-v7', gymSessionDate);
+        }
+        renderAll();
+        return;
+      }
+      const trigger = event.target.closest('#undoTrigger');
+      if (trigger) {
+        const hidden = rawCourses(selectedDay, selectedWeek).filter(course => skipped.has(skipKey(selectedDate(), course)));
+        trigger.outerHTML = `<div class="undo-choices">${hidden.map(course => `<button type="button" data-undo="${course._id}">撤销第${course.start}–${course.end}节跳过</button>`).join('')}</div>`;
+        return;
+      }
+      const undo = event.target.closest('[data-undo]');
+      if (undo) {
+        const course = D.courses[Number(undo.dataset.undo)];
+        if (course) {
+          skipped.delete(skipKey(selectedDate(), course));
+          persistSkipped();
+          renderAll();
+        }
+      }
+    });
 
     document.querySelectorAll('.segment').forEach(button => {
       button.addEventListener('click', () => {
         viewMode = button.dataset.mode;
+        dayFocus = true;
         writeStorage('neu-schedule-view-mode', viewMode);
         renderWeekCard();
         renderPanels();
@@ -427,7 +544,7 @@
   function boot() {
     setupInteractions();
     renderAll();
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js?v=6', { updateViaCache: 'none' }).catch(() => {});
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js?v=7', { updateViaCache: 'none' }).catch(() => {});
     setInterval(() => {
       renderHeader();
       if (viewMode === 'week') renderWeekView();

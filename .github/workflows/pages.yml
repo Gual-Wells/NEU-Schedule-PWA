@@ -28,6 +28,7 @@ jobs:
           node --check app.js
           node --check sw.js
           node scripts/validate.mjs
+          node scripts/validate-ui.mjs
       - name: Setup Pages
         uses: actions/configure-pages@v5
       - name: Upload static site

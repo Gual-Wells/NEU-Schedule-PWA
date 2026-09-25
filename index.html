@@ -11,10 +11,10 @@
   <meta name="apple-mobile-web-app-title" content="课表" />
   <meta name="format-detection" content="telephone=no" />
   <title>课表</title>
-  <link rel="manifest" href="./manifest.webmanifest?v=6" />
+  <link rel="manifest" href="./manifest.webmanifest?v=7" />
   <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
   <link rel="icon" href="./icons/icon-192.png" />
-  <link rel="stylesheet" href="./styles.css?v=6" />
+  <link rel="stylesheet" href="./styles.css?v=7" />
 </head>
 <body>
   <main class="app-shell" id="app">
@@ -55,12 +55,12 @@
           <div class="timeline-grid" id="timelineGrid"></div>
         </div>
       </div>
-      <p class="micro-copy">浅绿＝健身房开放 · 绿色虚线＝非课程边界的开放时刻 · 红线＝现在</p>
+      <p class="micro-copy">左侧每节对应起止时间 · 课程标出所跨节次 · 绿底为健身房开放</p>
     </section>
 
     <section class="panel day-panel" id="dayPanel">
-      <article class="day-overview" id="dayOverview"></article>
-      <div class="agenda-list" id="agendaList"></div>
+      <article class="day-dashboard" id="dayDashboard"></article>
+      <section class="day-map" id="dayMap" aria-label="当日真实时间日程"></section>
     </section>
   </main>
 
@@ -75,6 +75,7 @@
         <button class="close-button" value="cancel" aria-label="关闭">×</button>
       </div>
       <div id="courseDetailBody" class="detail-grid"></div>
+      <button id="skipCourseButton" class="detail-skip" type="button">翘掉这节课</button>
     </form>
   </dialog>
 
@@ -92,7 +93,7 @@
     </form>
   </dialog>
 
-  <script src="./data.js?v=6"></script>
-  <script src="./app.js?v=6"></script>
+  <script src="./data.js?v=7"></script>
+  <script src="./app.js?v=7"></script>
 </body>
 </html>
