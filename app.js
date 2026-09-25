@@ -209,16 +209,14 @@
     }
 
     pieces.push('<div class="time-axis" style="grid-column:1;grid-row:2">');
-    for (let hour = 0; hour <= 24; hour++) {
-      pieces.push(`<div class="hour-tick ${hour === 0 ? 'first' : hour === 24 ? 'last' : ''}" style="top:${pct(hour * 60)}%"><span>${minutesToTime(hour * 60)}</span></div>`);
-    }
+    pieces.push('<div class="day-endpoint first" style="top:0%">00:00</div><div class="day-endpoint last" style="top:100%">24:00</div>');
     for (let period = 1; period <= 12; period++) {
       const start = timeToMinutes(D.periods[period][0]);
       const end = timeToMinutes(D.periods[period][1]);
       pieces.push(`<div class="period-slot" style="top:${pct(start)}%;height:${pct(end) - pct(start)}%"><strong>${period}节</strong><span class="period-start">${D.periods[period][0]}</span><span class="period-end">${D.periods[period][1]}</span></div>`);
     }
     for (const boundary of gymBoundaries) {
-      if (boundary <= DAY_START || boundary >= DAY_END || boundary % 60 === 0 || academicBoundaries.has(boundary)) continue;
+      if (boundary <= DAY_START || boundary >= DAY_END || academicBoundaries.has(boundary)) continue;
       pieces.push(`<div class="gym-time-tag aux" style="top:${pct(boundary)}%">${minutesToTime(boundary)}</div>`);
     }
     pieces.push('</div>');
@@ -228,10 +226,6 @@
 
       for (const [start, end] of gymSlots(day)) {
         pieces.push(`<div class="gym-band" style="top:${pct(start)}%;height:${pct(end) - pct(start)}%"></div>`);
-      }
-
-      for (let hour = 0; hour <= 24; hour++) {
-        pieces.push(`<div class="hour-guide ${hour === 24 ? 'last' : ''}" style="top:${pct(hour * 60)}%"></div>`);
       }
 
       for (const start of periodStarts) {
@@ -384,9 +378,7 @@
       ${state.actions ? `<div class="dashboard-actions">${state.actions}</div>` : ''}
       ${skipCount ? `<button type="button" class="undo-trigger" id="undoTrigger">已跳过 ${skipCount} 节 · 撤销</button>` : ''}`;
     const parts = ['<div class="map-heading"><strong>当日时间图</strong><span>00:00–24:00 · 课程与健身房</span></div><div class="day-map-inner"><div class="map-axis">'];
-    for (let hour = 0; hour <= 24; hour++) {
-      parts.push(`<div class="hour-tick ${hour === 0 ? 'first' : hour === 24 ? 'last' : ''}" style="top:${pct(hour * 60)}%"><span>${minutesToTime(hour * 60)}</span></div>`);
-    }
+    parts.push('<div class="day-endpoint first" style="top:0%">00:00</div><div class="day-endpoint last" style="top:100%">24:00</div>');
     for (let n = 1; n <= 12; n++) {
       const [start, end] = D.periods[n];
       parts.push(`<div class="map-period" style="top:${pct(timeToMinutes(start))}%;height:${pct(timeToMinutes(end)) - pct(timeToMinutes(start))}%"><strong>${n}节</strong><span class="period-start">${start}</span><span class="period-end">${end}</span></div>`);
@@ -396,9 +388,6 @@
     for (const [start, end] of gymSlots(selectedDay)) {
       parts.push(`<div class="gym-band" style="top:${pct(start)}%;height:${pct(end) - pct(start)}%"></div>`);
       parts.push(`<div class="map-gym-edge" style="top:${pct(start)}%">健身 ${minutesToTime(start)}开始</div><div class="map-gym-edge end" style="top:${pct(end)}%">${minutesToTime(end)}结束</div>`);
-    }
-    for (let hour = 0; hour <= 24; hour++) {
-      parts.push(`<div class="hour-guide ${hour === 24 ? 'last' : ''}" style="top:${pct(hour * 60)}%"></div>`);
     }
     for (const [start, end] of Object.values(D.periods)) {
       parts.push(`<div class="period-guide" style="top:${pct(timeToMinutes(start))}%"></div><div class="period-guide minor" style="top:${pct(timeToMinutes(end))}%"></div>`);
@@ -562,7 +551,7 @@
   function boot() {
     setupInteractions();
     renderAll();
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js?v=10', { updateViaCache: 'none' }).catch(() => {});
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js?v=11', { updateViaCache: 'none' }).catch(() => {});
     setInterval(() => {
       renderHeader();
       if (viewMode === 'week') renderWeekView();
