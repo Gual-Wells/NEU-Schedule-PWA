@@ -225,21 +225,30 @@
     const now = today();
     const isCurrentSelection = selectedWeek === currentWeek() && selectedDay === mondayIndex(now);
     const slots = D.gym.availability[selectedDay] || [];
+    const free = subtractCoursesFromGym(selectedDay, selectedWeek);
     const mins = now.getHours() * 60 + now.getMinutes();
     const hero = $('gymHero');
 
     if (isCurrentSelection) {
-      const open = slots.find(([s,e]) => mins >= timeToMinutes(s) && mins < timeToMinutes(e));
-      const next = slots.find(([s]) => mins < timeToMinutes(s));
-      if (open) {
-        hero.innerHTML = `<div class="hero-kicker">现在 · ${weekdayLong[selectedDay]}</div><div class="hero-main">健身房可用</div><div class="hero-sub">开放至 ${open[1]} · 下方已自动扣除本周课程占用</div>`;
-      } else if (next) {
-        hero.innerHTML = `<div class="hero-kicker">现在 · ${weekdayLong[selectedDay]}</div><div class="hero-main">暂不可用</div><div class="hero-sub">下一开放时段 ${next[0]}–${next[1]}</div>`;
+      const gymOpen = slots.find(([s,e]) => mins >= timeToMinutes(s) && mins < timeToMinutes(e));
+      const freeNow = free.find(([s,e]) => mins >= timeToMinutes(s) && mins < timeToMinutes(e));
+      const nextFree = free.find(([s]) => mins < timeToMinutes(s));
+      const currentCourse = activeCourses(selectedDay, selectedWeek).find(c => {
+        const t = periodTime(c);
+        return mins >= timeToMinutes(t.start) && mins < timeToMinutes(t.end);
+      });
+
+      if (freeNow) {
+        hero.innerHTML = `<div class="hero-kicker">现在 · ${weekdayLong[selectedDay]}</div><div class="hero-main">现在可以去</div><div class="hero-sub">无课程冲突 · 可用至 ${freeNow[1]}</div>`;
+      } else if (gymOpen && currentCourse) {
+        hero.innerHTML = `<div class="hero-kicker">现在 · ${weekdayLong[selectedDay]}</div><div class="hero-main">现在有课</div><div class="hero-sub">${escapeHtml(shortCourseName(currentCourse.name, currentCourse.end-currentCourse.start+1))}${nextFree ? ` · 下一可去 ${nextFree[0]}–${nextFree[1]}` : ' · 今天没有后续可去时段'}</div>`;
+      } else if (nextFree) {
+        hero.innerHTML = `<div class="hero-kicker">现在 · ${weekdayLong[selectedDay]}</div><div class="hero-main">暂时不能去</div><div class="hero-sub">下一可去 ${nextFree[0]}–${nextFree[1]}</div>`;
       } else {
-        hero.innerHTML = `<div class="hero-kicker">今天 · ${weekdayLong[selectedDay]}</div><div class="hero-main">开放已结束</div><div class="hero-sub">可以切换上方日期查看其他天</div>`;
+        hero.innerHTML = `<div class="hero-kicker">今天 · ${weekdayLong[selectedDay]}</div><div class="hero-main">今天没有后续可去时段</div><div class="hero-sub">切换上方日期可查看其他天</div>`;
       }
     } else {
-      hero.innerHTML = `<div class="hero-kicker">第 ${selectedWeek} 周 · ${weekdayLong[selectedDay]}</div><div class="hero-main">${slots.length ? '查看可用时段' : '暂无时段'}</div><div class="hero-sub">“可去健身”会同时考虑这一天的课程冲突</div>`;
+      hero.innerHTML = `<div class="hero-kicker">第 ${selectedWeek} 周 · ${weekdayLong[selectedDay]}</div><div class="hero-main">${free.length ? '查看可去时段' : '没有可去时段'}</div><div class="hero-sub">已同时考虑健身房开放和这一天的课程冲突</div>`;
     }
 
     const selectedDate = addDays(weekStart(selectedWeek), selectedDay - 1);
@@ -247,7 +256,6 @@
     $('gymUpdated').textContent = `表更新 ${D.gym.updated.replaceAll('-', '.')}`;
     $('freeTitle').textContent = `第 ${selectedWeek} 周 · ${weekdayLong[selectedDay]} 可去健身`;
 
-    const free = subtractCoursesFromGym(selectedDay, selectedWeek);
     $('freeWindows').innerHTML = free.length ? free.map(([s,e]) => {
       const dur = timeToMinutes(e) - timeToMinutes(s);
       return `<div class="free-window"><div><strong>${s}–${e}</strong><span> 无课程冲突</span></div><span class="duration">${formatDuration(dur)}</span></div>`;
