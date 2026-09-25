@@ -1,11 +1,11 @@
-const CACHE = 'neu-schedule-v9';
+const CACHE = 'neu-schedule-v10';
 const CORE = [
   './',
   './index.html',
-  './styles.css?v=9',
-  './data.js?v=9',
-  './app.js?v=9',
-  './manifest.webmanifest?v=9',
+  './styles.css?v=10',
+  './data.js?v=10',
+  './app.js?v=10',
+  './manifest.webmanifest?v=10',
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/apple-touch-icon.png'

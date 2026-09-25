@@ -54,7 +54,16 @@ assert.match(node('timelineGrid').innerHTML, /16:00–17:40/);
 assert.match(node('timelineGrid').innerHTML, /gym-odd/);
 assert.match(node('timelineGrid').innerHTML, /gym-even/);
 assert.match(node('timelineGrid').innerHTML, /period-slot/);
-assert.match(node('timelineGrid').innerHTML, /class="period-slot" style="top:60%;height:5%"[^>]*><strong>7节<\/strong><span class="period-start">16:00<\/span><span class="period-end">16:45<\/span>/);
+const verifyFullDayAxis = (html, periodClass) => {
+  assert.equal((html.match(/class="hour-tick/g) || []).length, 25);
+  assert.match(html, /class="hour-tick first" style="top:0%"><span>00:00<\/span>/);
+  assert.match(html, /class="hour-tick last" style="top:100%"><span>24:00<\/span>/);
+  const seventh = html.match(new RegExp(`class="${periodClass}" style="top:([\\d.]+)%;height:([\\d.]+)%"[^>]*><strong>7节<\\/strong><span class="period-start">16:00<\\/span><span class="period-end">16:45<\\/span>`));
+  assert.ok(seventh, 'seventh period must show both boundary times');
+  assert.ok(Math.abs(Number(seventh[1]) - 100 * 16 / 24) < 1e-9);
+  assert.ok(Math.abs(Number(seventh[2]) - 100 * 45 / 1440) < 1e-9);
+};
+verifyFullDayAxis(node('timelineGrid').innerHTML, 'period-slot');
 const sundayBand = node('timelineGrid').innerHTML.match(/class="day-lane (gym-(?:odd|even)) [^"]*" style="grid-column:8;grid-row:2"/)?.[1];
 node('nextWeek').listeners.click();
 const nextMondayBand = node('timelineGrid').innerHTML.match(/class="day-lane (gym-(?:odd|even)) [^"]*" style="grid-column:2;grid-row:2"/)?.[1];
@@ -65,7 +74,8 @@ segments[1].listeners.click();
 assert.match(node('dayDashboard').innerHTML, /现在可以去健身/);
 assert.match(node('dayMap').innerHTML, /应用数理统计/);
 assert.match(node('dayMap').innerHTML, /第7–8节 · 16:00–17:40/);
-assert.match(node('dayMap').innerHTML, /class="map-period" style="top:60%;height:5%"[^>]*><strong>7节<\/strong><span class="period-start">16:00<\/span><span class="period-end">16:45<\/span>/);
+verifyFullDayAxis(node('dayMap').innerHTML, 'map-period');
+assert.match(node('dayMap').innerHTML, /00:00–24:00/);
 assert.match(node('dayMap').innerHTML, /day-progress/);
 
 node('dayMap').listeners.click({ target: { closest: selector => selector === '[data-course]' ? { dataset: { course: '4' } } : null } });

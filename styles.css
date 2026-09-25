@@ -18,7 +18,7 @@
   --red: #cb352b;
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
-  --timeline-height: 900px;
+  --timeline-height: 1440px;
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -197,7 +197,12 @@ h2 { margin: 0; font-size: 17px; line-height: 1.2; }
   line-height: 1;
   pointer-events: none;
 }
-.period-slot { left: 2px; right: 2px; }
+.hour-tick { position: absolute; z-index: 0; left: 0; right: 0; height: 0; border-top: 1px solid #bfcede; pointer-events: none; }
+.hour-tick span { position: absolute; top: 0; left: 1px; transform: translateY(-50%); color: #42617e; font: 7px/1 Verdana, sans-serif; font-variant-numeric: tabular-nums; }
+.hour-tick.first span { transform: none; }
+.hour-tick.last { transform: translateY(-1px); }
+.hour-tick.last span { transform: translateY(-100%); }
+.period-slot { z-index: 1; left: 25px; right: 2px; }
 .period-slot strong, .map-period strong { color: #204d78; font-size: 9px; }
 .period-slot span, .map-period span { position: absolute; right: 1px; color: #244f78; font-size: 7px; font-variant-numeric: tabular-nums; }
 .period-slot .period-start, .map-period .period-start { top: 1px; }
@@ -220,7 +225,9 @@ h2 { margin: 0; font-size: 17px; line-height: 1.2; }
 .gym-band { position: absolute; z-index: 0; left: 0; right: 0; pointer-events: none; }
 .gym-odd .gym-band { background: var(--gym-fill-odd); }
 .gym-even .gym-band { background: var(--gym-fill-even); }
-.period-guide, .gym-guide, .current-time-line { position: absolute; left: 0; right: 0; height: 0; pointer-events: none; }
+.period-guide, .hour-guide, .gym-guide, .current-time-line { position: absolute; left: 0; right: 0; height: 0; pointer-events: none; }
+.hour-guide { z-index: 1; border-top: 1px solid #e3eaf1; }
+.hour-guide.last { transform: translateY(-1px); }
 .period-guide { z-index: 1; border-top: 1px solid #c3d1df; }
 .period-guide.minor { border-top: 1px dotted #cdd8e3; }
 .gym-guide { z-index: 2; border-top: 1px solid var(--green-line); }
@@ -317,7 +324,7 @@ h2 { margin: 0; font-size: 17px; line-height: 1.2; }
 .day-map-inner { display: grid; grid-template-columns: 73px minmax(0, 1fr); height: var(--timeline-height); }
 .map-axis, .map-track { position: relative; }
 .map-axis { border-right: 1px solid #8ba8c4; background: #e8eff7; }
-.map-period { left: 4px; right: 3px; }
+.map-period { z-index: 1; left: 27px; right: 3px; }
 .map-period strong { font-size: 10px; }
 .map-period span { font-size: 8px; }
 .map-track { overflow: hidden; background: #fff; }
