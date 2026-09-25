@@ -54,6 +54,11 @@ assert.match(node('timelineGrid').innerHTML, /16:00–17:40/);
 assert.match(node('timelineGrid').innerHTML, /gym-odd/);
 assert.match(node('timelineGrid').innerHTML, /gym-even/);
 assert.match(node('timelineGrid').innerHTML, /period-slot/);
+const sundayBand = node('timelineGrid').innerHTML.match(/class="day-lane (gym-(?:odd|even)) [^"]*" style="grid-column:8;grid-row:2"/)?.[1];
+node('nextWeek').listeners.click();
+const nextMondayBand = node('timelineGrid').innerHTML.match(/class="day-lane (gym-(?:odd|even)) [^"]*" style="grid-column:2;grid-row:2"/)?.[1];
+assert.ok(sundayBand && nextMondayBand && sundayBand !== nextMondayBand, 'gym backgrounds must alternate across week boundaries');
+node('prevWeek').listeners.click();
 
 segments[1].listeners.click();
 assert.match(node('dayDashboard').innerHTML, /现在可以去健身/);

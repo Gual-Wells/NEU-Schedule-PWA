@@ -35,7 +35,11 @@
   };
   const clamp = (n, min, max) => Math.min(max, Math.max(min, n));
   const pct = (mins) => clamp(((mins - DAY_START) / DAY_SPAN) * 100, 0, 100);
-  const gymVersion = day => day % 2 ? 'gym-odd' : 'gym-even';
+  const gymVersion = (day, week) => {
+    const date = addDays(weekStart(week), day - 1);
+    const ordinal = Math.floor(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / 86400000);
+    return ordinal % 2 ? 'gym-odd' : 'gym-even';
+  };
   const skipKey = (date, course) => `${dateKey(date)}:${course._id}`;
   let skipped;
   try { skipped = new Set(JSON.parse(localStorage.getItem('neu-schedule-skipped-v7') || '[]')); }
@@ -217,7 +221,7 @@
     pieces.push('</div>');
 
     for (let day = 1; day <= 7; day++) {
-      pieces.push(`<div class="day-lane ${gymVersion(day)} ${day === selectedDay ? 'selected-col' : ''}" style="grid-column:${day + 1};grid-row:2" data-day="${day}">`);
+      pieces.push(`<div class="day-lane ${gymVersion(day, selectedWeek)} ${day === selectedDay ? 'selected-col' : ''}" style="grid-column:${day + 1};grid-row:2" data-day="${day}">`);
 
       for (const [start, end] of gymSlots(day)) {
         pieces.push(`<div class="gym-band" style="top:${pct(start)}%;height:${pct(end) - pct(start)}%"></div>`);
@@ -378,7 +382,7 @@
       parts.push(`<div class="map-period" style="top:${pct(timeToMinutes(start))}%"><strong>${n}节</strong><span>${start}–${end}</span></div>`);
     }
     parts.push('</div>');
-    parts.push(`<div class="map-track ${gymVersion(selectedDay)}">`);
+    parts.push(`<div class="map-track ${gymVersion(selectedDay, selectedWeek)}">`);
     for (const [start, end] of gymSlots(selectedDay)) {
       parts.push(`<div class="gym-band" style="top:${pct(start)}%;height:${pct(end) - pct(start)}%"></div>`);
       parts.push(`<div class="map-gym-edge" style="top:${pct(start)}%">健身 ${minutesToTime(start)}开始</div><div class="map-gym-edge end" style="top:${pct(end)}%">${minutesToTime(end)}结束</div>`);
@@ -544,7 +548,7 @@
   function boot() {
     setupInteractions();
     renderAll();
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js?v=7', { updateViaCache: 'none' }).catch(() => {});
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js?v=8', { updateViaCache: 'none' }).catch(() => {});
     setInterval(() => {
       renderHeader();
       if (viewMode === 'week') renderWeekView();
