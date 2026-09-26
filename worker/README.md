@@ -24,7 +24,7 @@ pnpm exec wrangler d1 migrations apply neu-schedule-push --remote
 pnpm exec wrangler deploy --secrets-file /path/to/private-secrets.json
 ```
 
-本地联调：先运行 `pnpm exec wrangler d1 migrations apply neu-schedule-push --local`，再运行 `pnpm exec wrangler dev --local --ip 127.0.0.1 --port 8791 --var PAIRING_CODE:local-test`；另开终端执行 `node test/integration-local.mjs`。该脚本使用假订阅，只验证 D1 登记、同步、替换和停用，不会发送真实通知。
+本地联调：先运行 `pnpm exec wrangler d1 migrations apply neu-schedule-push --local`，再运行 `pnpm exec wrangler dev --local --ip 127.0.0.1 --port 8791 --var PAIRING_CODE:local-test`；另开终端执行 `node scripts/integration-local.mjs`。该脚本使用假订阅，只验证 D1 登记、同步、替换和停用，不会发送真实通知。
 
 首次部署前运行 `node scripts/generate-secrets.mjs /path/outside/repo/private-secrets.json` 生成密钥文件并保管在仓库外。已部署时**保持原 VAPID 密钥不变**，否则旧设备订阅需重新建立。`wrangler.jsonc` 中 D1 ID 是现有生产数据库；迁移到别的账户时先创建新 D1，再更新 ID 与页面的 `push-config.js`。
 

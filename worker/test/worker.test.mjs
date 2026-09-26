@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import worker, { validJob, validSubscription } from '../src/index.js';
+import { generateVapidKeys } from '@mmmike/web-push/vapid';
+import { sendPushNotification, rawPayload } from '@mmmike/web-push/send';
 
 const env = {
   APP_ORIGIN: 'https://gual-wells.github.io',
@@ -37,4 +39,30 @@ test('health, CORS and pairing protection', async () => {
     body: JSON.stringify({ code: 'wrong', subscription: sub })
   }), env);
   assert.equal(pairing.status, 401);
+});
+
+test('Web Push payload is encrypted and signed before sending', async () => {
+  const vapid = { ...await generateVapidKeys(), subject: 'mailto:test@example.com' };
+  const pair = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']);
+  const publicBytes = new Uint8Array(await crypto.subtle.exportKey('raw', pair.publicKey));
+  const encode = bytes => Buffer.from(bytes).toString('base64url');
+  const synthetic = {
+    endpoint: 'https://web.push.apple.com/synthetic',
+    keys: { p256dh: encode(publicBytes), auth: encode(crypto.getRandomValues(new Uint8Array(16))) }
+  };
+  const previousFetch = globalThis.fetch;
+  let requests = 0;
+  globalThis.fetch = async (url, options) => {
+    requests++;
+    assert.equal(url, synthetic.endpoint);
+    assert.equal(options.method, 'POST');
+    assert(options.headers.Authorization || options.headers.authorization);
+    assert(options.body.byteLength > 50);
+    return new Response(null, { status: 201 });
+  };
+  try {
+    const delivered = await sendPushNotification(synthetic, rawPayload(JSON.stringify({ web_push: 8030, notification: { title: '测试', navigate: env.APP_URL } })), vapid, { ttl: 600 });
+    assert.equal(delivered, true);
+    assert.equal(requests, 1);
+  } finally { globalThis.fetch = previousFetch; }
 });
