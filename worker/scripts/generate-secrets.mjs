@@ -9,8 +9,8 @@ const keys = await generateVapidKeys();
 const values = {
   VAPID_PUBLIC_KEY: keys.publicKey,
   VAPID_PRIVATE_KEY: keys.privateKey,
-  VAPID_SUBJECT: 'https://gual-wells.github.io/NEU-Schedule-PWA/',
-  PAIRING_CODE: randomBytes(18).toString('base64url')
+  VAPID_SUBJECT: 'https://neu-schedule-push-api.pages.dev/',
+  ENROLLMENT_KEY: randomBytes(32).toString('base64url')
 };
 fs.writeFileSync(target, JSON.stringify(values, null, 2), { flag: 'wx', mode: 0o600 });
 console.log(`Secrets written to ${target}; VAPID public key: ${values.VAPID_PUBLIC_KEY}`);

@@ -29,6 +29,7 @@ jobs:
           node --check gym-store.js
           node --check cloud-sync.js
           node --check bootstrap.js
+          node --check auth-client.js
           node --check sw.js
           node scripts/validate.mjs
           node scripts/validate-ui.mjs
@@ -39,8 +40,8 @@ jobs:
       - name: Prepare public files
         run: |
           mkdir public
-          cp index.html app.js gym-store.js cloud-sync.js bootstrap.js styles.css sw.js manifest.webmanifest .nojekyll public/
-          cp -r icons public/
+          cp legacy-redirect.html public/index.html
+          cp .nojekyll public/
       - name: Setup Pages
         uses: actions/configure-pages@v5
       - name: Upload static site

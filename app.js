@@ -778,8 +778,6 @@
     if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) {
       pushStatus('当前浏览器不支持 Web Push。'); return;
     }
-    const code = $('pairingCode').value.trim();
-    if (!code) { pushStatus('请输入配对码。'); return; }
     if (/iPhone|iPad|iPod/.test(navigator.userAgent) && !navigator.standalone && !matchMedia('(display-mode: standalone)').matches) {
       pushStatus('iPhone 请先加入主屏幕，再从主屏幕打开课表。'); return;
     }
@@ -788,7 +786,7 @@
     pushStatus('正在建立订阅…');
     try {
       const config = await pushRequest('/config');
-      const registration = await navigator.serviceWorker.register('./sw.js?v=20', { updateViaCache: 'none' });
+      const registration = await navigator.serviceWorker.register('./sw.js?v=21', { updateViaCache: 'none' });
       let subscription = await registration.pushManager.getSubscription();
       if (subscription) {
         const oldKey = subscription.options?.applicationServerKey;
@@ -798,10 +796,9 @@
         }
       }
       if (!subscription) subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(config.publicKey) });
-      const result = await pushRequest('/register', { code, subscription: subscription.toJSON() });
+      const result = await pushRequest('/register', { subscription: subscription.toJSON() });
       writeStorage('neu-schedule-push-token-v1', result.token);
       writeStorage('neu-schedule-push-endpoint-v1', subscription.endpoint);
-      $('pairingCode').value = '';
       initCloud();
       await syncPush();
     } catch (error) { pushStatus(`开启失败：${error.message}`); }
@@ -820,7 +817,7 @@
   }
   function setupPush() {
     $('pushSettingsButton').addEventListener('click', () => {
-      pushStatus(!pushBase() ? '后台服务尚未部署。' : pushToken() ? '后台提醒已开启。' : '输入配对码后开启后台提醒。');
+      pushStatus(!pushBase() ? '后台服务尚未部署。' : pushToken() ? '后台提醒已开启。' : '登录后可开启后台提醒。');
       $('pushDialog').showModal();
     });
     $('closePushDialog').addEventListener('click', () => $('pushDialog').close());
@@ -957,17 +954,15 @@
     setupInteractions();
     setupPush();
     $('cloudButton').addEventListener('click', () => {
-      cloudStatus(cloud?.connected() ? '云端已连接；可手动刷新数据' : '输入配对码连接云端');
+      cloudStatus(cloud?.connected() ? '云端已连接；可手动刷新数据' : '请使用通行密钥登录');
       $('cloudDialog').showModal();
     });
     $('closeCloudDialog').addEventListener('click', () => $('cloudDialog').close());
     $('connectCloud').addEventListener('click', async () => {
       try {
         cloudStatus('正在同步…');
-        if ($('cloudCode').value.trim()) await cloud.login($('cloudCode').value.trim());
-        else if (cloud.connected()) await cloud.sync();
-        else throw new Error('请输入配对码');
-        $('cloudCode').value = '';
+        if (cloud.connected()) await cloud.sync();
+        else throw new Error('请使用通行密钥登录');
         $('cloudDialog').close();
       } catch (error) { cloudStatus(`云端连接失败：${error.message}`); }
     });
@@ -979,7 +974,7 @@
     renderAll();
     initCloud();
     clearAttentionBadge();
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js?v=20', { updateViaCache: 'none' }).then(schedulePushSync).catch(() => {});
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js?v=21', { updateViaCache: 'none' }).then(schedulePushSync).catch(() => {});
     setInterval(() => {
       if (refreshDailyState()) { renderAll(); return; }
       renderHeader();

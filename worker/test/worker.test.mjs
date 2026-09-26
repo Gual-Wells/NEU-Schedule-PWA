@@ -5,10 +5,9 @@ import { generateVapidKeys } from '@mmmike/web-push/vapid';
 import { sendPushNotification, rawPayload } from '@mmmike/web-push/send';
 
 const env = {
-  APP_ORIGIN: 'https://gual-wells.github.io',
-  APP_URL: 'https://gual-wells.github.io/NEU-Schedule-PWA/?view=day',
-  VAPID_PUBLIC_KEY: 'public',
-  PAIRING_CODE: 'secret'
+  APP_ORIGIN: 'https://neu-schedule-push-api.pages.dev',
+  APP_URL: 'https://neu-schedule-push-api.pages.dev/?view=day',
+  VAPID_PUBLIC_KEY: 'public'
 };
 const sub = { endpoint: 'https://web.push.apple.com/Q', keys: { p256dh: 'A'.repeat(87), auth: 'B'.repeat(22) } };
 
@@ -27,18 +26,18 @@ test('reminder validation bounds timestamps and content', () => {
   assert(!validJob({ ...job, id: '../escape' }, now));
 });
 
-test('health, CORS and pairing protection', async () => {
+test('health, CORS and authenticated push enrollment', async () => {
   const origin = { origin: env.APP_ORIGIN };
   const health = await worker.fetch(new Request('https://worker.test/health', { headers: origin }), env);
   assert.equal(health.status, 200);
   assert.equal(health.headers.get('access-control-allow-origin'), env.APP_ORIGIN);
   const blocked = await worker.fetch(new Request('https://worker.test/config', { headers: { origin: 'https://evil.example' } }), env);
   assert.equal(blocked.status, 403);
-  const pairing = await worker.fetch(new Request('https://worker.test/register', {
+  const unauthenticated = await worker.fetch(new Request('https://worker.test/register', {
     method: 'POST', headers: { ...origin, 'content-type': 'application/json' },
-    body: JSON.stringify({ code: 'wrong', subscription: sub })
+    body: JSON.stringify({ subscription: sub })
   }), env);
-  assert.equal(pairing.status, 401);
+  assert.equal(unauthenticated.status, 401);
 });
 
 test('Web Push payload is encrypted and signed before sending', async () => {

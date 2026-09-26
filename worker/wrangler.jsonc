@@ -7,7 +7,7 @@
     { "binding": "DB", "database_name": "neu-schedule-push", "database_id": "8d87acfa-cd34-4995-860a-e2b1e589572d", "migrations_dir": "migrations" }
   ],
   "vars": {
-    "APP_ORIGIN": "https://gual-wells.github.io",
-    "APP_URL": "https://gual-wells.github.io/NEU-Schedule-PWA/?view=day"
+    "APP_ORIGIN": "https://neu-schedule-push-api.pages.dev",
+    "APP_URL": "https://neu-schedule-push-api.pages.dev/?view=day"
   }
 }

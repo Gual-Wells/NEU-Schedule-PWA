@@ -10,10 +10,10 @@
   <meta name="apple-mobile-web-app-title" content="课表" />
   <meta name="format-detection" content="telephone=no" />
   <title>课表</title>
-  <link rel="manifest" href="./manifest.webmanifest?v=20" />
+  <link rel="manifest" href="./manifest.webmanifest?v=21" />
   <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
   <link rel="icon" href="./icons/icon-192.png" />
-  <link rel="stylesheet" href="./styles.css?v=20" />
+  <link rel="stylesheet" href="./styles.css?v=21" />
 </head>
 <body>
   <main class="app-shell" id="app">
@@ -101,8 +101,6 @@
       <div class="sheet-head"><div><span class="sheet-kicker">后台推送</span><h2>课程与健身提醒</h2></div><button class="close-button" id="closePushDialog" type="button" aria-label="关闭">×</button></div>
       <p class="push-help">iPhone 请先把课表加入主屏幕，再从主屏幕打开。开启后，Cloudflare 会按课表时间发送系统通知。</p>
       <p class="push-help">想让解锁时的横幅留到手动处理：在 iPhone“设置 → 通知 → 课表”中打开锁定屏幕、通知中心和横幅；如果显示“横幅风格”，选择“持续”。这个设置由 iPhone 控制，课表无法代你更改。</p>
-      <label class="push-label" for="pairingCode">配对码</label>
-      <input id="pairingCode" class="push-input" type="password" autocomplete="off" placeholder="输入部署时生成的配对码" />
       <p class="push-status" id="pushStatus" role="status"></p>
       <div class="push-actions"><button id="enablePush" type="button">开启后台提醒</button><button id="testPush" type="button">发送测试</button><button id="disablePush" type="button">关闭提醒</button></div>
     </div>
@@ -112,10 +110,8 @@
     <div class="sheet push-sheet">
       <div class="sheet-head"><div><span class="sheet-kicker">数据同步</span><h2>云端课表与记录</h2></div><button class="close-button" id="closeCloudDialog" type="button" aria-label="关闭">×</button></div>
       <p class="push-help">课程和健身房开放表从云端读取。连接后，训练记录、当天翘课状态和页面偏好同步到云端；离线修改会在下次联网时补传。</p>
-      <label class="push-label" for="cloudCode">配对码（首次连接时输入）</label>
-      <input id="cloudCode" class="push-input" type="password" autocomplete="off" placeholder="输入配对码" />
       <p class="push-status" id="cloudStatus" role="status"></p>
-      <div class="push-actions"><button id="connectCloud" type="button">连接 / 立即同步</button><button id="logoutCloud" type="button">退出登录</button></div>
+      <div class="push-actions"><button id="connectCloud" type="button">立即同步</button><button id="logoutCloud" type="button">退出登录</button></div>
     </div>
   </dialog>
 
@@ -129,8 +125,10 @@
     </form>
   </dialog>
 
-  <script src="./gym-store.js?v=20"></script>
-  <script src="./cloud-sync.js?v=20"></script>
-  <script src="./bootstrap.js?v=20"></script>
+  <script src="./gym-store.js?v=21"></script>
+  <script src="./webauthn-browser.js?v=21"></script>
+  <script src="./auth-client.js?v=21"></script>
+  <script src="./cloud-sync.js?v=21"></script>
+  <script src="./bootstrap.js?v=21"></script>
 </body>
 </html>

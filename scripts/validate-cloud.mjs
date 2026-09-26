@@ -14,8 +14,9 @@ let serverSkips = [];
 let serverSettings = {};
 let commits = 0;
 const fakeFetch = async (url, options = {}) => {
-  const path = new URL(url).pathname;
-  if (options.headers?.authorization !== 'Bearer test-token') return { ok: false, status: 401, json: async () => ({ error: '未授权' }) };
+  const path = new URL(url, 'https://example.test').pathname;
+  assert.equal(options.credentials, 'same-origin');
+  assert.equal(options.headers?.authorization, undefined);
   if (path === '/state/commit') {
     commits++;
     for (const op of JSON.parse(options.body).ops) {
@@ -28,7 +29,7 @@ const fakeFetch = async (url, options = {}) => {
   return { ok: true, status: 200, json: async () => ({ sessions: serverSessions, skips: serverSkips, skipDay: day, settings: serverSettings }) };
 };
 const context = {
-  window: { PUSH_API_BASE: 'https://example.test', DATA_TOKEN: 'test-token' },
+  window: { AUTHENTICATED: true },
   localStorage: storage,
   fetch: fakeFetch,
   setTimeout,

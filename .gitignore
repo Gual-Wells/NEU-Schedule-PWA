@@ -3,3 +3,4 @@ worker/.wrangler/
 worker/.wrangler-out/
 worker/.dev.vars
 worker/.secrets*
+worker/gateway/dist/

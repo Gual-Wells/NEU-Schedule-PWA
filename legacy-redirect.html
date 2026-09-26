@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#174b84" />
+  <title>课表已迁移</title>
+  <style>body{font:16px/1.6 system-ui,sans-serif;background:#e8eef5;color:#17324f;margin:0;padding:32px 16px}.box{max-width:560px;margin:auto;background:white;border:1px solid #9bb2ca;box-shadow:0 3px 12px #8298ad55;padding:24px}h1{font-size:22px;margin:0 0 16px;color:#174b84}button,.link{display:inline-block;background:#1b548b;color:white;border:1px solid #0d3c69;padding:9px 14px;font:inherit;text-decoration:none;cursor:pointer;margin:4px 8px 4px 0}#status{min-height:24px}</style>
+</head>
+<body>
+  <main class="box">
+    <h1>课表已迁移</h1>
+    <p>新课表改用通行密钥登录。旧站点的训练记录不会自动跨域带过去；如有本机记录，请先导出，再到新课表的“健身”页导入。</p>
+    <p>请从旧的主屏幕课表图标打开此页；直接用 Safari 打开旧网址，可能看不到主屏幕版保存的记录。</p>
+    <button id="export" type="button">导出本机训练记录</button>
+    <a class="link" href="https://neu-schedule-push-api.pages.dev/">打开新版课表</a>
+    <p id="status" role="status"></p>
+    <p>新课表需要重新加入 iPhone 主屏幕并开启提醒。</p>
+  </main>
+  <script>
+    const status = document.getElementById('status');
+    let sessions = [];
+    try {
+      const saved = JSON.parse(localStorage.getItem('neu-schedule-gym-sessions-v1') || '[]');
+      if (Array.isArray(saved)) sessions = saved;
+    } catch {}
+    status.textContent = sessions.length ? `本机找到 ${sessions.length} 条训练记录。` : '本机没有找到训练记录。';
+    document.getElementById('export').addEventListener('click', () => {
+      const blob = new Blob([JSON.stringify({ version: 1, sessions }, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'neu-gym-migration.json';
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      status.textContent = `已导出 ${sessions.length} 条记录。`;
+    });
+  </script>
+</body>
+</html>

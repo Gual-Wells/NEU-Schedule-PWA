@@ -1,64 +1,37 @@
 (() => {
   'use strict';
-  const cacheKey = 'neu-schedule-data-cache-v1';
+  const auth = window.ScheduleAuth;
   const app = document.getElementById('app');
   const appMarkup = app.innerHTML;
-  const read = key => { try { return localStorage.getItem(key); } catch { return null; } };
-  const write = (key, value) => { try { localStorage.setItem(key, value); } catch {} };
-  // v19 kept a data token across launches. Revoke that local copy before showing login.
+  const cacheKey = 'neu-schedule-data-cache-v1';
   try { localStorage.removeItem('neu-schedule-data-token-v1'); } catch {}
+  window.PUSH_API_BASE = location.origin;
 
-  function normalizeBase(value) {
-    let url;
-    try { url = new URL(value.trim()); } catch { throw new Error('请输入完整的 HTTPS 后端地址。'); }
-    if (url.protocol !== 'https:' || url.username || url.password || url.pathname !== '/' || url.search || url.hash)
-      throw new Error('后端地址只能是 HTTPS 站点根地址。');
-    return url.origin;
-  }
-
-  async function request(base, path, body, token) {
-    const response = await fetch(base + path, {
-      method: body === undefined ? 'GET' : 'POST',
-      headers: { ...(body === undefined ? {} : { 'content-type': 'application/json' }), ...(token ? { authorization: `Bearer ${token}` } : {}) },
-      body: body === undefined ? undefined : JSON.stringify(body),
-      cache: 'no-store'
-    });
-    const data = await response.json();
-    if (!response.ok) {
-      const error = new Error(data.error || '请求失败');
-      error.status = response.status;
-      throw error;
-    }
-    return data;
-  }
-
-  const start = data => {
+  function start(data) {
+    window.AUTHENTICATED = true;
     window.APP_DATA = data;
     app.innerHTML = appMarkup;
     app.classList.remove('login-mode');
     const script = document.createElement('script');
-    script.src = './app.js?v=20';
+    script.src = './app.js?v=21';
     document.body.append(script);
-  };
-
-  async function load(base, token) {
-    const result = await request(base, '/schedule', undefined, token);
+  }
+  async function load() {
+    const result = await auth.request('/schedule');
     if (!result.data?.semester || !Array.isArray(result.data.courses) || !result.data.gym) throw new Error('课表数据无效');
-    write(cacheKey, JSON.stringify(result.data));
+    try { localStorage.setItem(cacheKey, JSON.stringify(result.data)); } catch {}
     start(result.data);
   }
-
-  function showLogin(message = '') {
+  function show(message, state) {
     app.classList.add('login-mode');
+    const enrolled = state?.enrolled;
+    const open = state?.enrollmentOpen;
     app.innerHTML = `<section class="login-box">
       <div class="login-head"><strong>个人课表</strong><span>NEU SCHEDULE</span></div>
       <div class="login-body">
-        <p>输入后端地址和访问密钥，验证后进入课表。地址与密钥不会保存在本机。</p>
-        <label for="loginEndpoint">后端地址</label>
-        <input id="loginEndpoint" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://..." />
-        <label for="loginKey">访问密钥</label>
-        <input id="loginKey" type="password" autocomplete="off" placeholder="输入访问密钥" />
-        <button id="loginSubmit" type="button">验证并进入课表</button>
+        <p>${enrolled ? '使用已登记的通行密钥登录。' : open ? '后台登记窗口已开放，请输入初始化密钥并创建唯一的通行密钥。' : '尚无通行密钥。请先在 Cloudflare 后台打开五分钟登记窗口。'}</p>
+        ${open ? '<label for="setupKey">初始化密钥</label><input id="setupKey" type="password" autocomplete="off" placeholder="输入初始化密钥" />' : ''}
+        <button id="loginSubmit" type="button">${enrolled ? '使用通行密钥登录' : open ? '登记通行密钥' : '检查登记窗口'}</button>
         <p id="loginMessage" role="status"></p>
       </div>
     </section>`;
@@ -67,36 +40,28 @@
       const button = document.getElementById('loginSubmit');
       const status = document.getElementById('loginMessage');
       button.disabled = true;
-      status.textContent = '正在验证…';
+      status.textContent = enrolled ? '正在验证通行密钥…' : open ? '正在登记…' : '正在检查…';
       try {
-        const base = normalizeBase(document.getElementById('loginEndpoint').value);
-        const code = document.getElementById('loginKey').value.trim();
-        if (!code) throw new Error('请输入访问密钥。');
-        const result = await request(base, '/auth/login', { code });
-        if (!/^[A-Za-z0-9_-]{40,60}$/.test(result.token || '')) throw new Error('后端返回的凭证无效。');
-        window.PUSH_API_BASE = base;
-        window.DATA_TOKEN = result.token;
-        try { await load(base, result.token); }
-        catch (error) {
-          if (error.status === 401) throw error;
-          let cached = null;
-          try { cached = JSON.parse(read(cacheKey) || 'null'); } catch {}
-          if (!cached) throw error;
-          start(cached);
-        }
+        if (enrolled) await auth.login();
+        else if (open) await auth.enroll(document.getElementById('setupKey').value.trim());
+        else { await boot(); return; }
+        await load();
       } catch (error) {
-        window.PUSH_API_BASE = '';
-        window.DATA_TOKEN = '';
-        status.textContent = error.message;
+        try {
+          const fresh = await auth.status();
+          if (fresh.enrolled !== enrolled || fresh.enrollmentOpen !== open) { show(error.message || '状态已更新', fresh); return; }
+        } catch {}
+        status.textContent = error.message || '操作未完成';
         button.disabled = false;
       }
     });
-    for (const id of ['loginEndpoint', 'loginKey']) {
-      document.getElementById(id).addEventListener('keydown', event => {
-        if (event.key === 'Enter') document.getElementById('loginSubmit').click();
-      });
-    }
   }
-
-  showLogin();
+  async function boot() {
+    try {
+      const state = await auth.status();
+      if (state.authenticated) { await load(); return; }
+      show('', state);
+    } catch (error) { show(`连接失败：${error.message}`, { enrolled: false, enrollmentOpen: false }); }
+  }
+  boot();
 })();

@@ -1,4 +1,5 @@
 import { rawPayload, sendPushNotification } from '@mmmike/web-push/send';
+import { authRoute, sessionFor } from './auth.js';
 
 const encoder = new TextEncoder();
 const MAX_JOBS = 1800;
@@ -26,13 +27,6 @@ async function sha256(value) {
   return b64url(new Uint8Array(await crypto.subtle.digest('SHA-256', encoder.encode(value))));
 }
 
-function safeEqual(a, b) {
-  if (typeof a !== 'string' || typeof b !== 'string') return false;
-  let diff = a.length ^ b.length;
-  for (let i = 0; i < Math.max(a.length, b.length); i++) diff |= (a.charCodeAt(i) || 0) ^ (b.charCodeAt(i) || 0);
-  return diff === 0;
-}
-
 function validSubscription(value) {
   if (!value || typeof value !== 'object' || !value.keys) return false;
   try {
@@ -57,12 +51,6 @@ async function deviceFor(request, env) {
   return env.DB.prepare('SELECT * FROM devices WHERE token_hash = ?').bind(await sha256(token)).first();
 }
 
-async function appTokenFor(request, env) {
-  const token = request.headers.get('authorization')?.match(/^Bearer ([A-Za-z0-9_-]{40,60})$/)?.[1];
-  if (!token) return null;
-  return env.DB.prepare('SELECT token_hash FROM app_tokens WHERE token_hash = ? AND created_at > ?').bind(await sha256(token), Date.now() - 90 * DAY).first();
-}
-
 function shanghaiDay(now = Date.now()) {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
 }
@@ -75,13 +63,6 @@ function validSession(value) {
     value.closesAt - value.startAt <= DAY &&
     (value.endAt === null || (Number.isSafeInteger(value.endAt) && value.endAt >= value.startAt && value.endAt <= value.closesAt)) &&
     (value.endReason === null || value.endReason === 'manual' || value.endReason === 'closing');
-}
-
-async function issueAppToken(env) {
-  const token = b64url(crypto.getRandomValues(new Uint8Array(32)));
-  const now = Date.now();
-  await env.DB.prepare('INSERT INTO app_tokens (token_hash, created_at, last_used_at) VALUES (?, ?, ?)').bind(await sha256(token), now, now).run();
-  return json({ token });
 }
 
 async function readState(env) {
@@ -154,13 +135,14 @@ async function route(request, env) {
   const url = new URL(request.url);
   if (request.method === 'GET' && url.pathname === '/health') return json({ ok: true });
   if (request.method === 'GET' && url.pathname === '/config') return json({ publicKey: env.VAPID_PUBLIC_KEY });
+  if (request.method === 'GET' && url.pathname === '/auth/status') return authRoute(request, env);
   if (request.method === 'GET' && url.pathname === '/schedule') {
-    if (!await appTokenFor(request, env)) return json({ error: '请先登录' }, 401);
+    if (!await sessionFor(request, env)) return json({ error: '请先登录' }, 401);
     const row = await env.DB.prepare('SELECT content, revision, updated_at FROM schedule_data WHERE id = 1').first();
     return row ? json({ data: JSON.parse(row.content), revision: row.revision, updatedAt: row.updated_at }) : json({ error: '课表尚未导入' }, 503);
   }
   if (request.method === 'GET' && url.pathname === '/state') {
-    if (!await appTokenFor(request, env)) return json({ error: '请连接云端数据' }, 401);
+    if (!await sessionFor(request, env)) return json({ error: '请先登录' }, 401);
     return json(await readState(env));
   }
   if (request.method === 'OPTIONS') return new Response(null, { status: 204 });
@@ -168,24 +150,15 @@ async function route(request, env) {
   let input;
   try { input = await readJson(request); }
   catch { return json({ error: '无效的 JSON 或请求过大' }, 400); }
-
-  if (url.pathname === '/auth/login') {
-    if (!env.PAIRING_CODE || !safeEqual(input.code, env.PAIRING_CODE)) return json({ error: '配对码不正确' }, 401);
-    return issueAppToken(env);
-  }
-  if (url.pathname === '/auth/logout') {
-    const credential = await appTokenFor(request, env);
-    if (!credential) return json({ error: '登录已失效' }, 401);
-    await env.DB.prepare('DELETE FROM app_tokens WHERE token_hash = ?').bind(credential.token_hash).run();
-    return json({ ok: true });
-  }
+  if (url.pathname === '/auth/login') return json({ error: '访问密钥登录已关闭' }, 403);
+  if (url.pathname.startsWith('/auth/')) return authRoute(request, env, input);
   if (url.pathname === '/state/commit') {
-    if (!await appTokenFor(request, env)) return json({ error: '请连接云端数据' }, 401);
+    if (request.headers.get('origin') !== env.APP_ORIGIN || !await sessionFor(request, env)) return json({ error: '请先登录' }, 401);
     return commitState(input, env);
   }
 
   if (url.pathname === '/register') {
-    if (!env.PAIRING_CODE || !safeEqual(input.code, env.PAIRING_CODE)) return json({ error: '配对码不正确' }, 401);
+    if (request.headers.get('origin') !== env.APP_ORIGIN || !await sessionFor(request, env)) return json({ error: '请先登录' }, 401);
     if (!validSubscription(input.subscription)) return json({ error: '无效的推送订阅' }, 400);
     const token = b64url(crypto.getRandomValues(new Uint8Array(32)));
     const id = crypto.randomUUID();
@@ -198,6 +171,7 @@ async function route(request, env) {
     return json({ token });
   }
 
+  if (request.headers.get('origin') !== env.APP_ORIGIN || !await sessionFor(request, env)) return json({ error: '请先登录' }, 401);
   const device = await deviceFor(request, env);
   if (!device) return json({ error: '订阅凭证已失效，请重新配对' }, 401);
 

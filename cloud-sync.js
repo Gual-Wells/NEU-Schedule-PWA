@@ -2,7 +2,6 @@
   'use strict';
   const QUEUE = 'neu-schedule-data-queue-v1';
   const MIGRATED = 'neu-schedule-data-migrated-v1';
-  const base = () => String(window.PUSH_API_BASE || '').replace(/\/$/, '');
   const get = key => { try { return localStorage.getItem(key); } catch { return null; } };
   const set = (key, value) => { try { localStorage.setItem(key, value); } catch {} };
   const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' }).format(Date.now());
@@ -12,14 +11,14 @@
   let apply = () => {};
   let status = () => {};
   let busy = null;
-  const connected = () => Boolean(window.DATA_TOKEN && base());
+  const connected = () => Boolean(window.AUTHENTICATED);
   function saveQueue() { set(QUEUE, JSON.stringify(queue)); }
-  async function request(path, body, token = window.DATA_TOKEN) {
-    const response = await fetch(base() + path, {
+  async function request(path, body) {
+    const response = await fetch(path, {
       method: body === undefined ? 'GET' : 'POST',
-      headers: { ...(body === undefined ? {} : { 'content-type': 'application/json' }), ...(token ? { authorization: `Bearer ${token}` } : {}) },
+      headers: body === undefined ? {} : { 'content-type': 'application/json' },
       body: body === undefined ? undefined : JSON.stringify(body),
-      cache: 'no-store'
+      credentials: 'same-origin', cache: 'no-store'
     });
     const data = await response.json();
     if (!response.ok) {
@@ -87,24 +86,17 @@
     snapshot = options.snapshot;
     apply = options.apply;
     status = options.status;
-    if (!base()) { status('云端服务未配置'); return; }
     if (connected()) {
       try { await sync(); }
-      catch (error) { status(error.status === 401 ? '云端身份已失效，请重新输入配对码' : `离线缓存中 · ${error.message}`); }
-    } else status('输入配对码连接云端');
-  }
-  async function login(code) {
-    if (!code) throw new Error('请输入配对码');
-    const result = await request('/auth/login', { code }, null);
-    window.DATA_TOKEN = result.token;
-    await sync();
+      catch (error) { status(error.status === 401 ? '登录已失效，请重新使用通行密钥' : `离线缓存中 · ${error.message}`); }
+    } else status('请使用通行密钥登录');
   }
   async function logout() {
-    try { if (connected()) await request('/auth/logout', {}); }
+    try { if (connected()) await window.ScheduleAuth.logout(); }
     finally {
-      window.DATA_TOKEN = '';
+      window.AUTHENTICATED = false;
       set('neu-schedule-data-cache-v1', '');
     }
   }
-  window.CloudSync = { initialize, login, logout, sync, connected, recordSessions, recordSkips, recordSettings };
+  window.CloudSync = { initialize, logout, sync, connected, recordSessions, recordSkips, recordSettings };
 })();
