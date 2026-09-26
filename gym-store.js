@@ -12,7 +12,7 @@
       (value.endReason === null || value.endReason === 'manual' || value.endReason === 'closing');
   }
 
-  function create(storage) {
+  function create(storage, onChange = () => {}) {
     let sessions = [];
     try {
       const parsed = JSON.parse(storage.getItem(KEY) || '[]');
@@ -25,9 +25,16 @@
     const list = () => sessions.map(session => ({ ...session }));
     const active = () => sessions.find(session => session.endAt === null) || null;
     function commit(next) {
+      const before = list();
       storage.setItem(KEY, JSON.stringify(next));
       sessions = next;
+      onChange(before, list());
       return list();
+    }
+    function replace(values) {
+      if (!Array.isArray(values) || values.some(value => !validSession(value))) throw new Error('云端训练记录无效。');
+      sessions = values.map(value => ({ ...value })).sort((a, b) => a.startAt - b.startAt);
+      storage.setItem(KEY, JSON.stringify(sessions));
     }
     function reconcile(now) {
       const open = active();
@@ -81,7 +88,7 @@
       reconcile(Date.now());
       return values.length;
     }
-    return { list, active, reconcile, start, stop, revise, remove, importSessions };
+    return { list, active, reconcile, start, stop, revise, remove, importSessions, replace };
   }
 
   window.GymStore = { KEY, create };

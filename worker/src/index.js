@@ -57,6 +57,74 @@ async function deviceFor(request, env) {
   return env.DB.prepare('SELECT * FROM devices WHERE token_hash = ?').bind(await sha256(token)).first();
 }
 
+async function appTokenFor(request, env) {
+  const token = request.headers.get('authorization')?.match(/^Bearer ([A-Za-z0-9_-]{40,60})$/)?.[1];
+  if (!token) return null;
+  return env.DB.prepare('SELECT token_hash FROM app_tokens WHERE token_hash = ? AND created_at > ?').bind(await sha256(token), Date.now() - 90 * DAY).first();
+}
+
+function shanghaiDay(now = Date.now()) {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
+}
+
+function validSession(value) {
+  const now = Date.now();
+  return value && typeof value.id === 'string' && /^[A-Za-z0-9_-]{1,90}$/.test(value.id) &&
+    Number.isSafeInteger(value.startAt) && value.startAt > 0 && value.startAt <= now + 60000 &&
+    Number.isSafeInteger(value.closesAt) && value.closesAt > value.startAt &&
+    value.closesAt - value.startAt <= DAY &&
+    (value.endAt === null || (Number.isSafeInteger(value.endAt) && value.endAt >= value.startAt && value.endAt <= value.closesAt)) &&
+    (value.endReason === null || value.endReason === 'manual' || value.endReason === 'closing');
+}
+
+async function issueAppToken(env) {
+  const token = b64url(crypto.getRandomValues(new Uint8Array(32)));
+  const now = Date.now();
+  await env.DB.prepare('INSERT INTO app_tokens (token_hash, created_at, last_used_at) VALUES (?, ?, ?)').bind(await sha256(token), now, now).run();
+  return json({ token });
+}
+
+async function readState(env) {
+  const today = shanghaiDay();
+  const [sessions, skips, settings] = await Promise.all([
+    env.DB.prepare('SELECT id, start_at, end_at, closes_at, end_reason FROM gym_sessions ORDER BY start_at').all(),
+    env.DB.prepare('SELECT course_ids FROM daily_skips WHERE day_key = ?').bind(today).first(),
+    env.DB.prepare('SELECT content FROM app_settings WHERE id = 1').first()
+  ]);
+  return {
+    sessions: sessions.results.map(row => ({ id: row.id, startAt: row.start_at, endAt: row.end_at, closesAt: row.closes_at, endReason: row.end_reason })),
+    skips: skips ? JSON.parse(skips.course_ids) : [],
+    skipDay: today,
+    settings: settings ? JSON.parse(settings.content) : {}
+  };
+}
+
+async function commitState(input, env) {
+  if (!Array.isArray(input.ops) || input.ops.length < 1 || input.ops.length > 500) return json({ error: '同步操作无效' }, 400);
+  const now = Date.now();
+  const today = shanghaiDay(now);
+  const commands = [];
+  for (const op of input.ops) {
+    if (op.type === 'session-upsert' && validSession(op.session)) {
+      const s = op.session;
+      commands.push(env.DB.prepare('INSERT INTO gym_sessions (id, start_at, end_at, closes_at, end_reason, updated_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET start_at=excluded.start_at, end_at=excluded.end_at, closes_at=excluded.closes_at, end_reason=excluded.end_reason, updated_at=excluded.updated_at')
+        .bind(s.id, s.startAt, s.endAt, s.closesAt, s.endReason, now));
+    } else if (op.type === 'session-delete' && typeof op.id === 'string' && /^[A-Za-z0-9_-]{1,90}$/.test(op.id)) {
+      commands.push(env.DB.prepare('DELETE FROM gym_sessions WHERE id = ?').bind(op.id));
+    } else if (op.type === 'skips' && op.day === today && Array.isArray(op.ids) && op.ids.length <= 300 &&
+      op.ids.every(id => Number.isInteger(id) && id >= 0 && id < 300)) {
+      commands.push(env.DB.prepare('INSERT INTO daily_skips (day_key, course_ids, updated_at) VALUES (?, ?, ?) ON CONFLICT(day_key) DO UPDATE SET course_ids=excluded.course_ids, updated_at=excluded.updated_at')
+        .bind(today, JSON.stringify([...new Set(op.ids)]), now));
+    } else if (op.type === 'settings' && op.settings && ['week', 'day', 'gym'].includes(op.settings.viewMode) && Object.keys(op.settings).length === 1) {
+      commands.push(env.DB.prepare('INSERT INTO app_settings (id, content, updated_at) VALUES (1, ?, ?) ON CONFLICT(id) DO UPDATE SET content=excluded.content, updated_at=excluded.updated_at')
+        .bind(JSON.stringify(op.settings), now));
+    } else return json({ error: '同步操作无效或日期已过' }, 400);
+  }
+  commands.push(env.DB.prepare('DELETE FROM daily_skips WHERE day_key < ?').bind(today));
+  await env.DB.batch(commands);
+  return json({ ok: true, ...await readState(env) });
+}
+
 function validJob(job, now) {
   return job && typeof job === 'object' &&
     /^[a-z0-9:-]{4,90}$/.test(job.id) && Number.isSafeInteger(job.dueAt) &&
@@ -86,11 +154,35 @@ async function route(request, env) {
   const url = new URL(request.url);
   if (request.method === 'GET' && url.pathname === '/health') return json({ ok: true });
   if (request.method === 'GET' && url.pathname === '/config') return json({ publicKey: env.VAPID_PUBLIC_KEY });
+  if (request.method === 'GET' && url.pathname === '/schedule') {
+    if (!await appTokenFor(request, env)) return json({ error: '请先登录' }, 401);
+    const row = await env.DB.prepare('SELECT content, revision, updated_at FROM schedule_data WHERE id = 1').first();
+    return row ? json({ data: JSON.parse(row.content), revision: row.revision, updatedAt: row.updated_at }) : json({ error: '课表尚未导入' }, 503);
+  }
+  if (request.method === 'GET' && url.pathname === '/state') {
+    if (!await appTokenFor(request, env)) return json({ error: '请连接云端数据' }, 401);
+    return json(await readState(env));
+  }
   if (request.method === 'OPTIONS') return new Response(null, { status: 204 });
   if (request.method !== 'POST') return json({ error: '未找到接口' }, 404);
   let input;
   try { input = await readJson(request); }
   catch { return json({ error: '无效的 JSON 或请求过大' }, 400); }
+
+  if (url.pathname === '/auth/login') {
+    if (!env.PAIRING_CODE || !safeEqual(input.code, env.PAIRING_CODE)) return json({ error: '配对码不正确' }, 401);
+    return issueAppToken(env);
+  }
+  if (url.pathname === '/auth/logout') {
+    const credential = await appTokenFor(request, env);
+    if (!credential) return json({ error: '登录已失效' }, 401);
+    await env.DB.prepare('DELETE FROM app_tokens WHERE token_hash = ?').bind(credential.token_hash).run();
+    return json({ ok: true });
+  }
+  if (url.pathname === '/state/commit') {
+    if (!await appTokenFor(request, env)) return json({ error: '请连接云端数据' }, 401);
+    return commitState(input, env);
+  }
 
   if (url.pathname === '/register') {
     if (!env.PAIRING_CODE || !safeEqual(input.code, env.PAIRING_CODE)) return json({ error: '配对码不正确' }, 401);
@@ -175,6 +267,7 @@ async function dispatchDue(env) {
     }
   }
   await env.DB.prepare('DELETE FROM reminders WHERE due_at < ?').bind(now - DAY).run();
+  await env.DB.prepare('DELETE FROM daily_skips WHERE day_key < ?').bind(shanghaiDay(now)).run();
 }
 
 export default {

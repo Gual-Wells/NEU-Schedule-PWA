@@ -46,7 +46,8 @@
   try { skipped = new Set(JSON.parse(localStorage.getItem('neu-schedule-skipped-v7') || '[]')); }
   catch (_) { skipped = new Set(); }
   let activeDateKey = dateKey(nowDate());
-  const gymStore = window.GymStore.create(localStorage);
+  const cloud = window.CloudSync;
+  const gymStore = window.GymStore.create(localStorage, (before, after) => cloud?.recordSessions(before, after));
   let gymMessage = '';
   const activeGymSession = () => gymStore.active();
   const formatDuration = (ms, withSeconds = false) => {
@@ -319,7 +320,11 @@
     });
   }
 
-  function persistSkipped() { writeStorage('neu-schedule-skipped-v7', JSON.stringify([...skipped])); schedulePushSync(); }
+  function persistSkipped() {
+    writeStorage('neu-schedule-skipped-v7', JSON.stringify([...skipped]));
+    cloud?.recordSkips([...skipped].map(key => Number(key.split(':').pop())).filter(Number.isInteger));
+    schedulePushSync();
+  }
   function refreshDailyState() {
     const now = nowDate();
     const today = dateKey(now);
@@ -631,7 +636,7 @@
           const backup = JSON.parse(await file.text());
           if (backup.version !== 1) throw new Error('备份版本不受支持。');
           const count = gymStore.importSessions(backup.sessions);
-          gymMessage = `已导入 ${count} 条记录。`;
+          gymMessage = `已导入 ${count} 条记录，等待云端同步。`;
         } catch (error) { gymMessage = `导入失败：${error.message}`; }
       } else return;
       renderGymView();
@@ -661,6 +666,7 @@
         viewMode = button.dataset.mode;
         dayFocus = true;
         writeStorage('neu-schedule-view-mode', viewMode);
+        cloud?.recordSettings(viewMode);
         renderAll();
       });
     });
@@ -782,7 +788,7 @@
     pushStatus('正在建立订阅…');
     try {
       const config = await pushRequest('/config');
-      const registration = await navigator.serviceWorker.register('./sw.js?v=18', { updateViaCache: 'none' });
+      const registration = await navigator.serviceWorker.register('./sw.js?v=19', { updateViaCache: 'none' });
       let subscription = await registration.pushManager.getSubscription();
       if (subscription) {
         const oldKey = subscription.options?.applicationServerKey;
@@ -796,6 +802,7 @@
       writeStorage('neu-schedule-push-token-v1', result.token);
       writeStorage('neu-schedule-push-endpoint-v1', subscription.endpoint);
       $('pairingCode').value = '';
+      initCloud();
       await syncPush();
     } catch (error) { pushStatus(`开启失败：${error.message}`); }
   }
@@ -912,7 +919,7 @@
         ${completed.length > 6 ? `<button class="gym-more" type="button" data-gym-command="toggle-all">${gymShowAll ? '收起记录' : '查看全部'}</button>` : ''}
       </section>
       <div class="gym-data-actions"><button type="button" data-gym-command="export">导出记录</button><button type="button" data-gym-command="import">导入记录</button><input id="gymImportFile" type="file" accept="application/json,.json" hidden /></div>
-      <p class="gym-message" role="status">${escapeHtml(gymMessage || '记录仅保存在此设备；换机前请导出备份。')}</p>`;
+      <p class="gym-message" role="status">${escapeHtml(gymMessage || (cloud?.connected() ? '训练记录已接入云端，可导出备份。' : '连接云端后可跨设备保存训练记录；本机仍可导出备份。'))}</p>`;
     panel.scrollTop = scrollTop;
   }
 
@@ -920,12 +927,59 @@
     if ('clearAppBadge' in navigator) navigator.clearAppBadge().catch(() => {});
   }
 
+  function cloudStatus(message) {
+    $('cloudStatus').textContent = message;
+    $('cloudButton').title = message;
+    $('cloudButton').textContent = message === '云端已同步' ? '云端 ✓' : '云端';
+  }
+  function initCloud() {
+    if (!cloud) return;
+    cloud.initialize({
+      snapshot: () => ({
+        sessions: gymStore.list(),
+        skips: [...skipped].map(key => Number(key.split(':').pop())).filter(Number.isInteger),
+        viewMode
+      }),
+      apply: state => {
+        gymStore.replace(state.sessions);
+        skipped = new Set(state.skipDay === dateKey(nowDate()) ? state.skips.map(id => `${state.skipDay}:${id}`) : []);
+        writeStorage('neu-schedule-skipped-v7', JSON.stringify([...skipped]));
+        if (!new URLSearchParams(location.search).has('view') && ['week', 'day', 'gym'].includes(state.settings?.viewMode))
+          viewMode = state.settings.viewMode;
+        renderAll();
+        schedulePushSync();
+      },
+      status: cloudStatus
+    }).catch(error => cloudStatus(`云端连接失败：${error.message}`));
+  }
+
   function boot() {
     setupInteractions();
     setupPush();
+    $('cloudButton').addEventListener('click', () => {
+      cloudStatus(cloud?.connected() ? '云端已连接；可手动刷新数据' : '输入配对码连接云端');
+      $('cloudDialog').showModal();
+    });
+    $('closeCloudDialog').addEventListener('click', () => $('cloudDialog').close());
+    $('connectCloud').addEventListener('click', async () => {
+      try {
+        cloudStatus('正在同步…');
+        if ($('cloudCode').value.trim()) await cloud.login($('cloudCode').value.trim());
+        else if (cloud.connected()) await cloud.sync();
+        else throw new Error('请输入配对码');
+        $('cloudCode').value = '';
+        $('cloudDialog').close();
+      } catch (error) { cloudStatus(`云端连接失败：${error.message}`); }
+    });
+    $('logoutCloud').addEventListener('click', async () => {
+      try { await cloud.logout(); }
+      catch (_) {}
+      finally { location.reload(); }
+    });
     renderAll();
+    initCloud();
     clearAttentionBadge();
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js?v=18', { updateViaCache: 'none' }).then(schedulePushSync).catch(() => {});
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js?v=19', { updateViaCache: 'none' }).then(schedulePushSync).catch(() => {});
     setInterval(() => {
       if (refreshDailyState()) { renderAll(); return; }
       renderHeader();
@@ -933,8 +987,8 @@
       else if (viewMode === 'day') renderDayView();
       else renderGymView();
     }, 60000);
-    document.addEventListener('visibilitychange', () => { if (!document.hidden) { clearAttentionBadge(); renderAll(); schedulePushSync(); } });
-    window.addEventListener('focus', () => { clearAttentionBadge(); renderAll(); schedulePushSync(); });
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) { clearAttentionBadge(); renderAll(); cloud?.sync().catch(() => {}); schedulePushSync(); } });
+    window.addEventListener('focus', () => { clearAttentionBadge(); renderAll(); cloud?.sync().catch(() => {}); schedulePushSync(); });
   }
 
   boot();
