@@ -156,6 +156,7 @@
   function writeStorage(key, value) { try { localStorage.setItem(key, value); } catch (_) {} }
   const requestedView = new URLSearchParams(location.search).get('view') || readStorage('neu-schedule-view-mode');
   let viewMode = ['week', 'day', 'gym'].includes(requestedView) ? requestedView : 'week';
+  let viewModeTouched = false;
   let timelineScrollTop = null;
   let firstTimelineRender = true;
   let dayFocus = true;
@@ -291,8 +292,10 @@
       button.addEventListener('click', () => {
         selectedDay = Number(button.dataset.day);
         viewMode = 'day';
+        viewModeTouched = true;
         dayFocus = true;
         writeStorage('neu-schedule-view-mode', viewMode);
+        cloud?.recordSettings(viewMode);
         renderAll();
       });
     });
@@ -664,6 +667,7 @@
     document.querySelectorAll('.segment').forEach(button => {
       button.addEventListener('click', () => {
         viewMode = button.dataset.mode;
+        viewModeTouched = true;
         dayFocus = true;
         writeStorage('neu-schedule-view-mode', viewMode);
         cloud?.recordSettings(viewMode);
@@ -786,7 +790,7 @@
     pushStatus('正在建立订阅…');
     try {
       const config = await pushRequest('/config');
-      const registration = await navigator.serviceWorker.register('./sw.js?v=22', { updateViaCache: 'none' });
+      const registration = await navigator.serviceWorker.register('./sw.js?v=23', { updateViaCache: 'none' });
       let subscription = await registration.pushManager.getSubscription();
       if (subscription) {
         const oldKey = subscription.options?.applicationServerKey;
@@ -941,7 +945,7 @@
         gymStore.replace(state.sessions);
         skipped = new Set(state.skipDay === dateKey(nowDate()) ? state.skips.map(id => `${state.skipDay}:${id}`) : []);
         writeStorage('neu-schedule-skipped-v7', JSON.stringify([...skipped]));
-        if (!new URLSearchParams(location.search).has('view') && ['week', 'day', 'gym'].includes(state.settings?.viewMode))
+        if (!viewModeTouched && !new URLSearchParams(location.search).has('view') && ['week', 'day', 'gym'].includes(state.settings?.viewMode))
           viewMode = state.settings.viewMode;
         renderAll();
         schedulePushSync();
@@ -974,7 +978,7 @@
     renderAll();
     initCloud();
     clearAttentionBadge();
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js?v=22', { updateViaCache: 'none' }).then(schedulePushSync).catch(() => {});
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js?v=23', { updateViaCache: 'none' }).then(schedulePushSync).catch(() => {});
     setInterval(() => {
       if (refreshDailyState()) { renderAll(); return; }
       renderHeader();

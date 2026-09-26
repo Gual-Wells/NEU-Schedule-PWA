@@ -60,4 +60,37 @@ cloud.recordSessions([localSession], []);
 await new Promise(resolve => setTimeout(resolve, 25));
 await cloud.sync();
 assert.equal(serverSessions.length, 0, 'deletion reaches D1 rather than being resurrected from local cache');
+const earlyValues = new Map([['neu-schedule-view-mode', 'week']]);
+let releaseFirstCommit;
+const firstCommitHeld = new Promise(resolve => { releaseFirstCommit = resolve; });
+let holdCommit = true;
+let finalMode;
+const earlyContext = {
+  window: { AUTHENTICATED: true },
+  localStorage: {
+    getItem: key => earlyValues.get(key) ?? null,
+    setItem: (key, value) => earlyValues.set(key, String(value))
+  },
+  fetch: async (url, options = {}) => {
+    if (url === '/state/commit') {
+      if (holdCommit) { holdCommit = false; await firstCommitHeld; }
+      for (const op of JSON.parse(options.body).ops)
+        if (op.type === 'settings') finalMode = op.settings.viewMode;
+    }
+    return { ok: true, status: 200, json: async () => ({ sessions: [], skips: [], skipDay: day, settings: { viewMode: finalMode } }) };
+  },
+  setTimeout, Date, Intl, JSON, console
+};
+vm.createContext(earlyContext);
+vm.runInContext(fs.readFileSync(new URL('../cloud-sync.js', import.meta.url), 'utf8'), earlyContext);
+const earlyCloud = earlyContext.window.CloudSync;
+const initializing = earlyCloud.initialize({
+  snapshot: () => ({ sessions: [], skips: [], viewMode: 'week' }),
+  apply() {}, status() {}
+});
+await new Promise(resolve => setTimeout(resolve, 0));
+earlyCloud.recordSettings('day');
+releaseFirstCommit();
+await initializing;
+assert.equal(finalMode, 'day', 'tab changes during first sync must reach the server');
 console.log('Cloud legacy import, refresh and deletion OK');

@@ -33,9 +33,18 @@ node('monday-head').dataset.day = '1';
 const store = new Map();
 store.set('neu-schedule-skipped-v7', JSON.stringify(['2026-09-24:6']));
 const lifecycle = new Map();
+let remoteApply;
 const sandbox = {
   Date: FixedDate,
-  window: { addEventListener(name, fn) { lifecycle.set(`window:${name}`, fn); } },
+  window: {
+    addEventListener(name, fn) { lifecycle.set(`window:${name}`, fn); },
+    CloudSync: {
+      initialize({ apply }) { remoteApply = apply; return Promise.resolve(); },
+      connected() { return true; },
+      recordSessions() {}, recordSkips() {}, recordSettings() {},
+      sync() { return Promise.resolve(); }
+    }
+  },
   document: {
     getElementById: node,
     querySelectorAll(selector) { return selector === '.segment' ? segments : []; },
@@ -174,4 +183,8 @@ node('dayDashboard').listeners.click({ target: { closest: selector => selector =
 assert.equal(store.get('neu-schedule-skipped-v7'), '[]', 'one click must restore all skipped courses');
 assert.match(node('dayMap').innerHTML, /data-course="0"/);
 assert.match(node('dayMap').innerHTML, /data-course="5"/);
+segments[2].listeners.click();
+assert.equal(node('weekCard').hidden, true);
+remoteApply({ sessions: [], skips: [], skipDay: '2026-09-23', settings: { viewMode: 'week' } });
+assert.equal(node('weekCard').hidden, true, 'a delayed cloud response must not undo a tapped tab');
 console.log('UI state transitions OK');

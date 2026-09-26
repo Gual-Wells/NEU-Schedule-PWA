@@ -1,15 +1,15 @@
-const CACHE = 'neu-schedule-v22';
+const CACHE = 'neu-schedule-v23';
 const CORE = [
   './',
   './index.html',
-  './styles.css?v=22',
-  './gym-store.js?v=22',
-  './webauthn-browser.js?v=22',
-  './auth-client.js?v=22',
-  './cloud-sync.js?v=22',
-  './bootstrap.js?v=22',
-  './app.js?v=22',
-  './manifest.webmanifest?v=22',
+  './styles.css?v=23',
+  './gym-store.js?v=23',
+  './webauthn-browser.js?v=23',
+  './auth-client.js?v=23',
+  './cloud-sync.js?v=23',
+  './bootstrap.js?v=23',
+  './app.js?v=23',
+  './manifest.webmanifest?v=23',
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/apple-touch-icon.png'

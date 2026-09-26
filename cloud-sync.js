@@ -47,7 +47,7 @@
     if (connected() && get(MIGRATED) === 'yes') enqueue([{ type: 'skips', day: today(), ids }]);
   }
   function recordSettings(viewMode) {
-    if (connected() && get(MIGRATED) === 'yes') enqueue([{ type: 'settings', settings: { viewMode } }]);
+    if (connected()) enqueue([{ type: 'settings', settings: { viewMode } }]);
   }
   async function syncNow() {
     if (!connected()) return;

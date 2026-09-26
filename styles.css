@@ -25,7 +25,6 @@
 html, body { width: 100%; height: 100%; }
 @media (display-mode: standalone) {
   html { touch-action: pan-x pan-y; }
-  input, select, textarea { font-size: 16px !important; }
 }
 body {
   margin: 0;
@@ -56,7 +55,7 @@ button:disabled { cursor: default; opacity: .5; }
   overflow: hidden;
 }
 .app-shell.gym-mode { grid-template-rows: auto auto minmax(0, 1fr); }
-.app-shell.login-mode { grid-template-rows: minmax(0, 1fr); place-items: center; }
+.app-shell.login-mode { grid-template-rows: minmax(0, 1fr); place-items: start center; overflow-y: auto; }
 .gym-mode .toolbar-side { display: none; }
 .app-header {
   display: flex;
@@ -421,13 +420,13 @@ h2 { margin: 0; font-size: 17px; line-height: 1.2; }
 
 .sheet-dialog { width: min(540px, calc(100% - 16px)); max-width: 540px; border: 0; padding: 0; background: transparent; }
 .loading-error { width: min(440px, 90vw); margin: 20vh auto; border: 2px solid #416c98; padding: 18px; background: #f0f5fa; box-shadow: 0 5px 14px #173b6270; text-align: center; }
-.login-box { width: min(390px, calc(100vw - 28px)); margin: auto; border: 2px solid #365f88; background: #f0f5fa; box-shadow: 0 7px 20px #173b6270; }
+.login-box { width: min(390px, calc(100vw - 28px)); margin: clamp(24px, 9svh, 78px) auto 24px; border: 2px solid #365f88; background: #f0f5fa; box-shadow: 0 7px 20px #173b6270; }
 .login-head { display: flex; align-items: baseline; justify-content: space-between; padding: 11px 14px; background: linear-gradient(#6b9dc9, #2866a3 48%, #1b528a 49%, #104374); color: white; text-shadow: 0 1px #123f72; }
 .login-head strong { font-size: 19px; }.login-head span { font-size: 9px; letter-spacing: .12em; }
 .login-body { display: grid; gap: 8px; padding: 17px 14px; font-size: 12px; }
 .login-body p { margin: 0 0 7px; line-height: 1.5; }
 .login-body label { color: #244c73; font-weight: bold; }
-.login-body input { width: 100%; border: 1px solid #8da9c2; border-radius: 2px; padding: 8px; background: white; color: #183651; font: inherit; }
+.login-body input { width: 100%; border: 1px solid #8da9c2; border-radius: 2px; padding: 8px; background: white; color: #183651; font: inherit; font-size: 16px; }
 .login-body input[readonly] { background: #e7eef5; font-size: 10px; }
 .login-body button { margin-top: 6px; border: 1px solid #174b84; border-radius: 2px; padding: 9px; background: linear-gradient(#79aae0, #2162a6 48%, #164c89 49%, #174575); color: white; font-weight: bold; text-shadow: 0 1px #123b68; }
 #loginMessage { min-height: 1.5em; color: #9d351b; }
