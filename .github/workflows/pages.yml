@@ -39,7 +39,7 @@ jobs:
       - name: Prepare public files
         run: |
           mkdir public
-          cp index.html app.js gym-store.js cloud-sync.js bootstrap.js push-config.js styles.css sw.js manifest.webmanifest .nojekyll public/
+          cp index.html app.js gym-store.js cloud-sync.js bootstrap.js styles.css sw.js manifest.webmanifest .nojekyll public/
           cp -r icons public/
       - name: Setup Pages
         uses: actions/configure-pages@v5

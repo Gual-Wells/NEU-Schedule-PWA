@@ -1,6 +1,5 @@
 (() => {
   'use strict';
-  const TOKEN = 'neu-schedule-data-token-v1';
   const QUEUE = 'neu-schedule-data-queue-v1';
   const MIGRATED = 'neu-schedule-data-migrated-v1';
   const base = () => String(window.PUSH_API_BASE || '').replace(/\/$/, '');
@@ -13,9 +12,9 @@
   let apply = () => {};
   let status = () => {};
   let busy = null;
-  const connected = () => Boolean(get(TOKEN));
+  const connected = () => Boolean(window.DATA_TOKEN && base());
   function saveQueue() { set(QUEUE, JSON.stringify(queue)); }
-  async function request(path, body, token = get(TOKEN)) {
+  async function request(path, body, token = window.DATA_TOKEN) {
     const response = await fetch(base() + path, {
       method: body === undefined ? 'GET' : 'POST',
       headers: { ...(body === undefined ? {} : { 'content-type': 'application/json' }), ...(token ? { authorization: `Bearer ${token}` } : {}) },
@@ -97,13 +96,13 @@
   async function login(code) {
     if (!code) throw new Error('请输入配对码');
     const result = await request('/auth/login', { code }, null);
-    set(TOKEN, result.token);
+    window.DATA_TOKEN = result.token;
     await sync();
   }
   async function logout() {
     try { if (connected()) await request('/auth/logout', {}); }
     finally {
-      set(TOKEN, '');
+      window.DATA_TOKEN = '';
       set('neu-schedule-data-cache-v1', '');
     }
   }

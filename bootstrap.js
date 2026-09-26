@@ -1,21 +1,22 @@
 (() => {
   'use strict';
   const cacheKey = 'neu-schedule-data-cache-v1';
-  const tokenKey = 'neu-schedule-data-token-v1';
-  const base = String(window.PUSH_API_BASE || '').replace(/\/$/, '');
   const app = document.getElementById('app');
   const appMarkup = app.innerHTML;
   const read = key => { try { return localStorage.getItem(key); } catch { return null; } };
   const write = (key, value) => { try { localStorage.setItem(key, value); } catch {} };
-  const start = data => {
-    window.APP_DATA = data;
-    app.innerHTML = appMarkup;
-    app.classList.remove('login-mode');
-    const script = document.createElement('script');
-    script.src = './app.js?v=19';
-    document.body.append(script);
-  };
-  async function request(path, body, token) {
+  // v19 kept a data token across launches. Revoke that local copy before showing login.
+  try { localStorage.removeItem('neu-schedule-data-token-v1'); } catch {}
+
+  function normalizeBase(value) {
+    let url;
+    try { url = new URL(value.trim()); } catch { throw new Error('请输入完整的 HTTPS 后端地址。'); }
+    if (url.protocol !== 'https:' || url.username || url.password || url.pathname !== '/' || url.search || url.hash)
+      throw new Error('后端地址只能是 HTTPS 站点根地址。');
+    return url.origin;
+  }
+
+  async function request(base, path, body, token) {
     const response = await fetch(base + path, {
       method: body === undefined ? 'GET' : 'POST',
       headers: { ...(body === undefined ? {} : { 'content-type': 'application/json' }), ...(token ? { authorization: `Bearer ${token}` } : {}) },
@@ -30,59 +31,72 @@
     }
     return data;
   }
-  async function load(token) {
-    const result = await request('/schedule', undefined, token);
+
+  const start = data => {
+    window.APP_DATA = data;
+    app.innerHTML = appMarkup;
+    app.classList.remove('login-mode');
+    const script = document.createElement('script');
+    script.src = './app.js?v=20';
+    document.body.append(script);
+  };
+
+  async function load(base, token) {
+    const result = await request(base, '/schedule', undefined, token);
     if (!result.data?.semester || !Array.isArray(result.data.courses) || !result.data.gym) throw new Error('课表数据无效');
     write(cacheKey, JSON.stringify(result.data));
     start(result.data);
   }
+
   function showLogin(message = '') {
     app.classList.add('login-mode');
     app.innerHTML = `<section class="login-box">
       <div class="login-head"><strong>个人课表</strong><span>NEU SCHEDULE</span></div>
       <div class="login-body">
-        <p>登录后读取课程、健身房开放表和训练记录。</p>
+        <p>输入后端地址和访问密钥，验证后进入课表。地址与密钥不会保存在本机。</p>
         <label for="loginEndpoint">后端地址</label>
-        <input id="loginEndpoint" value="${base}" readonly />
+        <input id="loginEndpoint" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://..." />
         <label for="loginKey">访问密钥</label>
-        <input id="loginKey" type="password" autocomplete="current-password" placeholder="输入你的配对码" />
+        <input id="loginKey" type="password" autocomplete="off" placeholder="输入访问密钥" />
         <button id="loginSubmit" type="button">验证并进入课表</button>
-        <p id="loginMessage" role="status">${message}</p>
+        <p id="loginMessage" role="status"></p>
       </div>
     </section>`;
+    document.getElementById('loginMessage').textContent = message;
     document.getElementById('loginSubmit').addEventListener('click', async () => {
       const button = document.getElementById('loginSubmit');
-      const message = document.getElementById('loginMessage');
+      const status = document.getElementById('loginMessage');
       button.disabled = true;
-      message.textContent = '正在验证…';
+      status.textContent = '正在验证…';
       try {
-        const result = await request('/auth/login', { code: document.getElementById('loginKey').value.trim() });
-        write(tokenKey, result.token);
-        await load(result.token);
+        const base = normalizeBase(document.getElementById('loginEndpoint').value);
+        const code = document.getElementById('loginKey').value.trim();
+        if (!code) throw new Error('请输入访问密钥。');
+        const result = await request(base, '/auth/login', { code });
+        if (!/^[A-Za-z0-9_-]{40,60}$/.test(result.token || '')) throw new Error('后端返回的凭证无效。');
+        window.PUSH_API_BASE = base;
+        window.DATA_TOKEN = result.token;
+        try { await load(base, result.token); }
+        catch (error) {
+          if (error.status === 401) throw error;
+          let cached = null;
+          try { cached = JSON.parse(read(cacheKey) || 'null'); } catch {}
+          if (!cached) throw error;
+          start(cached);
+        }
       } catch (error) {
-        message.textContent = error.message;
+        window.PUSH_API_BASE = '';
+        window.DATA_TOKEN = '';
+        status.textContent = error.message;
         button.disabled = false;
       }
     });
-    document.getElementById('loginKey').addEventListener('keydown', event => {
-      if (event.key === 'Enter') document.getElementById('loginSubmit').click();
-    });
-  }
-  (async () => {
-    let token = read(tokenKey);
-    if (!token) { showLogin(); return; }
-    try { await load(token); }
-    catch (error) {
-      if (error.status === 401) {
-        write(tokenKey, '');
-        write(cacheKey, '');
-        showLogin('登录已失效，请重新输入密钥。');
-        return;
-      }
-      let cached = null;
-      try { cached = JSON.parse(read(cacheKey) || 'null'); } catch {}
-      if (cached) start(cached);
-      else showLogin('课表服务暂时不可用，请联网后再试。');
+    for (const id of ['loginEndpoint', 'loginKey']) {
+      document.getElementById(id).addEventListener('keydown', event => {
+        if (event.key === 'Enter') document.getElementById('loginSubmit').click();
+      });
     }
-  })();
+  }
+
+  showLogin();
 })();

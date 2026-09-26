@@ -1,6 +1,6 @@
 # Cloudflare 课表数据与后台提醒
 
-公开接口：`https://neu-schedule-push-api.pages.dev`。Cloudflare Pages Function 通过内部 Service binding 调用 `neu-schedule-push` Worker；后者负责 Cron 和 D1。`workers.dev` 在当前网络不可达，所以页面使用免费的 `pages.dev` 子域名。
+Cloudflare Pages Function 通过内部 Service binding 调用 `neu-schedule-push` Worker；后者负责 Cron 和 D1。页面每次打开时由用户输入 Pages 网关地址，不在前端预置或持久化。
 
 ## 结构
 
@@ -30,7 +30,7 @@ pnpm exec wrangler deploy --secrets-file /path/to/private-secrets.json
 
 本地联调：先在仓库根目录运行 `node worker/scripts/seed-schedule.mjs`，然后运行 `pnpm exec wrangler d1 migrations apply neu-schedule-push --local`，再运行 `pnpm exec wrangler dev --local --ip 127.0.0.1 --port 8791 --var PAIRING_CODE:local-test`；另开终端执行 `node scripts/integration-data-local.mjs` 与 `node scripts/integration-local.mjs`。前者验证私有课表和状态，后者使用假订阅验证推送流程。
 
-首次部署前运行 `node scripts/generate-secrets.mjs /path/outside/repo/private-secrets.json` 生成密钥文件并保管在仓库外。已部署时**保持原 VAPID 密钥不变**，否则旧设备订阅需重新建立。`wrangler.jsonc` 中 D1 ID 是现有生产数据库；迁移到别的账户时先创建新 D1，再更新 ID 与页面的 `push-config.js`。
+首次部署前运行 `node scripts/generate-secrets.mjs /path/outside/repo/private-secrets.json` 生成密钥文件并保管在仓库外。已部署时**保持原 VAPID 密钥不变**，否则旧设备订阅需重新建立。`wrangler.jsonc` 中 D1 ID 是现有生产数据库；迁移到别的账户时先创建新 D1，并向用户提供新网关地址。
 
 网关位于 `gateway/`。在该目录运行 `../node_modules/.bin/wrangler pages deploy dist --project-name neu-schedule-push-api --branch main` 可更新它。部署时 `gateway/wrangler.jsonc` 的 Service binding 必须继续指向 `neu-schedule-push`。
 

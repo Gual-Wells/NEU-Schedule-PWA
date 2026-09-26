@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 
-const values = new Map([['neu-schedule-data-token-v1', 'test-token'], ['neu-schedule-view-mode', 'gym']]);
+const values = new Map([['neu-schedule-view-mode', 'gym']]);
 const storage = {
   getItem: key => values.get(key) ?? null,
   setItem: (key, value) => values.set(key, String(value))
@@ -28,7 +28,7 @@ const fakeFetch = async (url, options = {}) => {
   return { ok: true, status: 200, json: async () => ({ sessions: serverSessions, skips: serverSkips, skipDay: day, settings: serverSettings }) };
 };
 const context = {
-  window: { PUSH_API_BASE: 'https://example.test' },
+  window: { PUSH_API_BASE: 'https://example.test', DATA_TOKEN: 'test-token' },
   localStorage: storage,
   fetch: fakeFetch,
   setTimeout,
