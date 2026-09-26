@@ -21,7 +21,11 @@ const job = { id: '2026-10-06-c3-p30', dueAt: Date.now() + 3_600_000, title: '�
 const synced = await request('/sync', { jobs: [job] }, token);
 assert.equal(synced.status, 200, JSON.stringify(synced.body));
 assert.equal(synced.body.count, 1);
-const again = await request('/sync', { jobs: [job] }, token);
+const fullPlan = Array.from({ length: 850 }, (_, i) => ({ id: `test-${i}`, dueAt: Date.now() + 3_600_000 + i * 60_000, title: '课程提醒', body: '地点', ttl: 600 }));
+const full = await request('/sync', { jobs: fullPlan }, token);
+assert.equal(full.status, 200, JSON.stringify(full.body));
+assert.equal(full.body.count, 850);
+const again = await request('/sync', { jobs: fullPlan }, token);
 assert.equal(again.body.unchanged, true);
 const replaced = await request('/sync', { jobs: [] }, token);
 assert.equal(replaced.status, 200);

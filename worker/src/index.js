@@ -117,11 +117,14 @@ async function route(request, env) {
     const hash = await sha256(JSON.stringify(jobs));
     if (hash === device.plan_hash) return json({ ok: true, count: jobs.length, unchanged: true });
     const commands = [env.DB.prepare('DELETE FROM reminders WHERE device_id = ? AND sent_at IS NULL').bind(device.id)];
-    for (let i = 0; i < jobs.length; i += 75) {
-      const part = jobs.slice(i, i + 75);
-      const values = part.map(() => '(?, ?, ?, ?, ?, ?)').join(', ');
-      const params = part.flatMap(job => [device.id, job.id, job.dueAt, job.title, job.body, job.ttl]);
-      commands.push(env.DB.prepare(`INSERT OR IGNORE INTO reminders (device_id, reminder_id, due_at, title, body, ttl) VALUES ${values}`).bind(...params));
+    for (let i = 0; i < jobs.length; i += 100) {
+      const part = jobs.slice(i, i + 100);
+      commands.push(env.DB.prepare(`
+        INSERT OR IGNORE INTO reminders (device_id, reminder_id, due_at, title, body, ttl)
+        SELECT ?, json_extract(value, '$.id'), json_extract(value, '$.dueAt'),
+          json_extract(value, '$.title'), json_extract(value, '$.body'), json_extract(value, '$.ttl')
+        FROM json_each(?)
+      `).bind(device.id, JSON.stringify(part)));
     }
     commands.push(env.DB.prepare('UPDATE devices SET plan_hash = ?, updated_at = ? WHERE id = ?').bind(hash, now, device.id));
     await env.DB.batch(commands);
