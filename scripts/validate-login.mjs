@@ -72,7 +72,7 @@ assert.match(app.innerHTML, /初始化密钥/);
 assert(!requests.includes('/schedule'));
 element('setupKey').value = 'setup-secret';
 await element('loginSubmit').listener();
-assert.equal(scriptLoaded, './app.js?v=21');
+assert.equal(scriptLoaded, './app.js?v=22');
 assert.equal(context.window.AUTHENTICATED, true);
 assert.equal(context.window.PUSH_API_BASE, 'https://app.example');
 assert.equal(saved.has('neu-schedule-data-token-v1'), false);

@@ -1,5 +1,13 @@
 (() => {
   'use strict';
+  if (window.matchMedia?.('(display-mode: standalone)')?.matches || window.navigator?.standalone === true) {
+    const stopZoom = event => event.preventDefault();
+    document.addEventListener('gesturestart', stopZoom, { passive: false });
+    document.addEventListener('gesturechange', stopZoom, { passive: false });
+    document.addEventListener('touchmove', event => {
+      if (event.touches.length > 1) event.preventDefault();
+    }, { passive: false });
+  }
   const auth = window.ScheduleAuth;
   const app = document.getElementById('app');
   const appMarkup = app.innerHTML;
@@ -13,7 +21,7 @@
     app.innerHTML = appMarkup;
     app.classList.remove('login-mode');
     const script = document.createElement('script');
-    script.src = './app.js?v=21';
+    script.src = './app.js?v=22';
     document.body.append(script);
   }
   async function load() {

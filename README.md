@@ -32,7 +32,7 @@
 
 页面仍是纯 HTML / CSS / JavaScript，无界面框架或广告；通行密钥交互使用随站点部署的 SimpleWebAuthn 浏览器库。正式 PWA 与 API 同域部署在 Cloudflare Pages；旧 GitHub Pages 地址已停用，返回 404。
 
-静态资源使用版本化 URL；Service Worker 版本为 `neu-schedule-v21`，导航优先网络、离线回退缓存，且不缓存认证或数据 API。部署前检查数据约束、日程状态切换、健身记录、推送计划和登录边界。
+静态资源使用版本化 URL；Service Worker 版本为 `neu-schedule-v22`，导航优先网络、离线回退缓存，且不缓存认证或数据 API。主屏幕 PWA 禁止双指和双击页面缩放，单指滚动保留。部署前检查数据约束、日程状态切换、健身记录、推送计划和登录边界。
 
 课程、节次和健身房开放表以 Cloudflare D1 为运行时权威。新站点地址为 `https://neu-schedule-push-api.pages.dev/`。首次登记需后台五分钟窗口与单独的初始化密钥；之后仅用唯一通行密钥登录。会话保存在同域 HttpOnly Cookie，最长 90 天，打开页面无需每次验证。登录后才读取云端课表。
 
