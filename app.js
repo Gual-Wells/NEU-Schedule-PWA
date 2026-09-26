@@ -82,30 +82,25 @@
 
   const currentWeek = () => clamp(weekFromDate(nowDate()), 1, D.semester.totalWeeks);
   const weekStart = (week) => addDays(parseLocalDate(D.semester.week1Monday), (week - 1) * 7);
-  const periodTime = (course) => course.startTime && course.endTime
-    ? { start: course.startTime, end: course.endTime }
-    : { start: D.periods[course.start][0], end: D.periods[course.end][1] };
-  const courseSpanLabel = (course) => course.testOnly ? '临时课程' : `第${course.start}–${course.end}节`;
+  const periodTime = (course) => ({ start: D.periods[course.start][0], end: D.periods[course.end][1] });
 
   function rawCourses(day, week) {
-    const date = dateKey(addDays(weekStart(week), day - 1));
     return D.courses
-      .filter(course => course.weekday === day && course._weekSet.has(week) && (!course.date || course.date === date))
-      .sort((a, b) => timeToMinutes(periodTime(a).start) - timeToMinutes(periodTime(b).start));
+      .filter(course => course.weekday === day && course._weekSet.has(week))
+      .sort((a, b) => a.start - b.start || a.end - b.end);
   }
   function activeCourses(day, week) {
     const date = addDays(weekStart(week), day - 1);
     return rawCourses(day, week).filter(course => !skipped.has(skipKey(date, course)));
   }
 
-  function gymSlots(day, week = selectedWeek) {
-    const key = dateKey(addDays(weekStart(week), day - 1));
-    return (D.gym.overrides?.[key] || D.gym.availability[day] || []).map(([start, end]) => [timeToMinutes(start), timeToMinutes(end)]);
+  function gymSlots(day) {
+    return (D.gym.availability[day] || []).map(([start, end]) => [timeToMinutes(start), timeToMinutes(end)]);
   }
   const isInside = (intervals, minute) => intervals.some(([start, end]) => start <= minute && minute < end);
 
   function dayFreeWindows(day, week) {
-    let intervals = gymSlots(day, week).map(([start, end]) => [start, end]);
+    let intervals = gymSlots(day).map(([start, end]) => [start, end]);
     const occupied = activeCourses(day, week).map(course => {
       const time = periodTime(course);
       return [timeToMinutes(time.start), timeToMinutes(time.end)];
@@ -144,7 +139,7 @@
   const periodStarts = Object.values(D.periods).map(([start]) => timeToMinutes(start));
   const periodEnds = Object.values(D.periods).map(([, end]) => timeToMinutes(end));
   const academicBoundaries = new Set([...periodStarts, ...periodEnds]);
-  const gymBoundaries = week => [...new Set(Array.from({ length: 7 }, (_, i) => gymSlots(i + 1, week).flat()).flat())].sort((a, b) => a - b);
+  const gymBoundaries = [...new Set(Object.values(D.gym.availability).flatMap(slots => slots.flat()).map(timeToMinutes))].sort((a, b) => a - b);
 
   let selectedWeek = currentWeek();
   let selectedDay = mondayIndex(nowDate());
@@ -222,7 +217,7 @@
       const end = timeToMinutes(D.periods[period][1]);
       pieces.push(`<div class="period-slot" style="top:${pct(start)}%;height:${pct(end) - pct(start)}%"><strong>${period}节</strong><span class="period-start">${D.periods[period][0]}</span><span class="period-end">${D.periods[period][1]}</span></div>`);
     }
-    for (const boundary of gymBoundaries(selectedWeek)) {
+    for (const boundary of gymBoundaries) {
       if (boundary <= DAY_START || boundary >= DAY_END || academicBoundaries.has(boundary)) continue;
       pieces.push(`<div class="gym-time-tag aux" style="top:${pct(boundary)}%">${minutesToTime(boundary)}</div>`);
     }
@@ -255,7 +250,7 @@
         const duration = end - start;
         pieces.push(`<button class="course-block ${duration < 95 ? 'compact' : ''}" type="button" data-course="${course._id}" style="top:${pct(start)}%;height:${pct(end) - pct(start)}%;background:${course._color}">
           <span class="course-title">${escapeHtml(shortCourseName(course.name, course.end - course.start + 1))}</span>
-          <span class="course-period">${courseSpanLabel(course)}</span>
+          <span class="course-period">第${course.start}–${course.end}节</span>
           <span class="course-time">${time.start}–${time.end}</span>
         </button>`);
       }
@@ -432,7 +427,7 @@
       const t = periodTime(course);
       const start = timeToMinutes(t.start), end = timeToMinutes(t.end);
       parts.push(`<button type="button" class="map-course" data-course="${course._id}" style="top:${pct(start)}%;height:${pct(end) - pct(start)}%;--course-color:${course._color}">
-        <strong>${escapeHtml(course.name)}</strong><span>${courseSpanLabel(course)} · ${t.start}–${t.end}</span><span>${escapeHtml(course.location)}${course.className ? ` · ${escapeHtml(course.className)}` : ''}${course.note ? ` · ${escapeHtml(course.note)}` : ''}</span>
+        <strong>${escapeHtml(course.name)}</strong><span>第${course.start}–${course.end}节 · ${t.start}–${t.end}</span><span>${escapeHtml(course.location)}${course.className ? ` · ${escapeHtml(course.className)}` : ''}${course.note ? ` · ${escapeHtml(course.note)}` : ''}</span>
       </button>`);
     }
     if (state.live && state.minute >= DAY_START && state.minute <= DAY_END)
@@ -454,7 +449,7 @@
     const time = periodTime(course);
     $('courseDetailTitle').textContent = course.name;
     $('courseDetailBody').innerHTML = [
-      detail('时间', `${weekdayLong[course.weekday]} ${time.start}–${time.end} · ${courseSpanLabel(course)}`),
+      detail('时间', `${weekdayLong[course.weekday]} ${time.start}–${time.end} · ${course.start}-${course.end}节`),
       detail('地点', course.location),
       detail('教师', course.teacher),
       detail('周数', `第 ${course.weeks} 周`),
@@ -636,12 +631,8 @@
           const suffix = `${key}-c${course._id}`;
           add(`${suffix}-p30`, date, start, 30, '30 分钟后上课', `${course.name} · ${course.location}${course.note ? ` · ${course.note}` : ''}`, 900);
           add(`${suffix}-p5`, date, start, 5, '5 分钟后上课', `${course.name} · ${course.location}`, 600);
-          if (course.testOnly) add(`${suffix}-start`, date, start, 0, '临时课程开始', `${course.name} · ${course.location}`, 600);
           add(`${suffix}-e30`, date, end, 30, '30 分钟后下课', course.name, 900);
         }
-        if (D.gym.overrides?.[key]) D.gym.overrides[key].forEach(([start, end], index) => {
-          add(`${key}-gym-physical-${index}`, date, timeToMinutes(start), 0, '健身房已开放', `今天 ${start}–${end} 开放`, 600);
-        });
         dayFreeWindows(day, week).forEach(([start, end], index) => {
           const suffix = `${key}-g${index}`;
           add(`${suffix}-open`, date, start, 30, '30 分钟后可以健身', `${minutesToTime(start)}–${minutesToTime(end)} 可去健身`, 900);
@@ -684,7 +675,7 @@
     pushStatus('正在建立订阅…');
     try {
       const config = await pushRequest('/config');
-      const registration = await navigator.serviceWorker.register('./sw.js?v=15', { updateViaCache: 'none' });
+      const registration = await navigator.serviceWorker.register('./sw.js?v=16', { updateViaCache: 'none' });
       let subscription = await registration.pushManager.getSubscription();
       if (subscription) {
         const oldKey = subscription.options?.applicationServerKey;
@@ -732,7 +723,7 @@
     setupInteractions();
     setupPush();
     renderAll();
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js?v=15', { updateViaCache: 'none' }).then(schedulePushSync).catch(() => {});
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js?v=16', { updateViaCache: 'none' }).then(schedulePushSync).catch(() => {});
     setInterval(() => {
       if (refreshDailyState()) { renderAll(); return; }
       renderHeader();

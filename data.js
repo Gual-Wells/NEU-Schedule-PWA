@@ -31,15 +31,12 @@ window.APP_DATA = {
     { name: '思想政治理论课（硕士理工类必选）', weekday: 4, start: 5, end: 6, teacher: '曹东溟', location: '1号A307', weeks: '12', className: '03班（浑南）' },
     { name: '体育', weekday: 5, start: 7, end: 8, teacher: '于明', location: '1号A205', weeks: '1', className: '07班' },
     { name: '论文写作与学术规范', weekday: 1, start: 9, end: 12, teacher: '郭贵冰', location: '1号A303', weeks: '2-5', className: '' },
-    { name: '前沿软件体系结构', weekday: 3, start: 9, end: 10, teacher: '石凯', location: '1号A203', weeks: '2-5、7-10', className: '' },
-    // 仅用于 2026-09-26 的后台推送实测；收到用户反馈后移除。
-    { name: '临时推送测试课', weekday: 6, date: '2026-09-26', start: 7, end: 7, startTime: '15:50', endTime: '16:35', teacher: '测试', location: '临时测试', weeks: '4', className: '', testOnly: true }
+    { name: '前沿软件体系结构', weekday: 3, start: 9, end: 10, teacher: '石凯', location: '1号A203', weeks: '2-5、7-10', className: '' }
   ],
   gym: {
     updated: '2026-09-04',
     // 根据用户提供的“健身房可用时段”照片转录。
     // weekday: 1=周一 ... 7=周日；每一项为可用时间段。
-    overrides: { '2026-09-26': [['15:50', '20:40']] },
     availability: {
       1: [['07:00', '10:00'], ['12:10', '13:50'], ['17:40', '20:40']],
       2: [['07:00', '10:00'], ['12:10', '13:50'], ['17:40', '20:40']],
