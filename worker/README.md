@@ -24,6 +24,6 @@
 
 ## 生产部署
 
-先备份 D1 并运行 `pnpm exec wrangler d1 migrations apply neu-schedule-push --remote`。设置高熵 `ENROLLMENT_KEY` Secret 后运行 `pnpm exec wrangler deploy`。随后在仓库根目录运行 `node worker/gateway/build.mjs`，再从 `worker/gateway/` 运行 `../node_modules/.bin/wrangler pages deploy dist --project-name neu-schedule-push-api --branch main`。保留现有 VAPID 密钥，避免无故使推送订阅失效。确认页面与 API 同域、状态为未登记且窗口关闭，再按 [AUTH_DESIGN.md](AUTH_DESIGN.md) 开启窗口。
+先备份 D1 并运行 `pnpm exec wrangler d1 migrations apply neu-schedule-push --remote`。仅首次部署时设置高熵 `ENROLLMENT_KEY` Secret；保留已有 Secret、通行密钥和 VAPID 密钥，避免使登录或推送订阅失效。运行 `pnpm exec wrangler deploy`，随后在仓库根目录运行 `node worker/gateway/build.mjs`，再从 `worker/gateway/` 运行 `../node_modules/.bin/wrangler pages deploy dist --project-name neu-schedule-push-api --branch main`。确认页面与 API 同域。仅首次登记或后台手工重置后的恢复流程，才按 [AUTH_DESIGN.md](AUTH_DESIGN.md) 开启五分钟登记窗口；日常部署不打开登记窗口。
 
-GitHub Pages 只发布跳转页。旧主屏幕 PWA 无法沿用新域名的 Cookie、本地存储和推送订阅；新站点需重新加入主屏幕、导入训练记录并开启提醒。
+GitHub Pages 只发布 404 页面，旧地址不再提供应用入口。旧主屏幕 PWA 无法沿用新域名的 Cookie、本地存储和推送订阅；新站点需重新加入主屏幕、导入训练记录并开启提醒。项目各模块的经验与复用边界见 [项目经验报告](../docs/PROJECT_EXPERIENCE.md)。
