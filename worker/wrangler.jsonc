@@ -1,0 +1,13 @@
+{
+  "name": "neu-schedule-push",
+  "main": "src/index.js",
+  "compatibility_date": "2026-09-01",
+  "triggers": { "crons": ["* * * * *"] },
+  "d1_databases": [
+    { "binding": "DB", "database_name": "neu-schedule-push", "database_id": "8d87acfa-cd34-4995-860a-e2b1e589572d", "migrations_dir": "migrations" }
+  ],
+  "vars": {
+    "APP_ORIGIN": "https://gual-wells.github.io",
+    "APP_URL": "https://gual-wells.github.io/NEU-Schedule-PWA/?view=day"
+  }
+}

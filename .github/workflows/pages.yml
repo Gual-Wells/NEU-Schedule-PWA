@@ -29,12 +29,18 @@ jobs:
           node --check sw.js
           node scripts/validate.mjs
           node scripts/validate-ui.mjs
+          node scripts/validate-push.mjs
+      - name: Prepare public files
+        run: |
+          mkdir public
+          cp index.html app.js data.js push-config.js styles.css sw.js manifest.webmanifest .nojekyll public/
+          cp -r icons public/
       - name: Setup Pages
         uses: actions/configure-pages@v5
       - name: Upload static site
         uses: actions/upload-pages-artifact@v4
         with:
-          path: .
+          path: public
       - name: Deploy
         id: deployment
         uses: actions/deploy-pages@v4

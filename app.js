@@ -146,7 +146,7 @@
   const selectedDate = () => addDays(weekStart(selectedWeek), selectedDay - 1);
   function readStorage(key) { try { return localStorage.getItem(key); } catch (_) { return null; } }
   function writeStorage(key, value) { try { localStorage.setItem(key, value); } catch (_) {} }
-  let viewMode = readStorage('neu-schedule-view-mode') === 'day' ? 'day' : 'week';
+  let viewMode = new URLSearchParams(location.search).get('view') === 'day' || readStorage('neu-schedule-view-mode') === 'day' ? 'day' : 'week';
   let timelineScrollTop = null;
   let firstTimelineRender = true;
   let dayFocus = true;
@@ -301,7 +301,7 @@
     });
   }
 
-  function persistSkipped() { writeStorage('neu-schedule-skipped-v7', JSON.stringify([...skipped])); }
+  function persistSkipped() { writeStorage('neu-schedule-skipped-v7', JSON.stringify([...skipped])); schedulePushSync(); }
   function refreshDailyState() {
     const now = nowDate();
     const today = dateKey(now);
@@ -332,6 +332,7 @@
     const slot = gymSlots(selectedDay).find(([start, end]) => start <= minute && minute < end);
     gymSessionDate = slot ? `${dateKey(selectedDate())}|${slot[1]}` : '';
     writeStorage('neu-schedule-gym-session-v7', gymSessionDate);
+    schedulePushSync();
   }
   function skipCourse(course, gym = false) {
     refreshDailyState();
@@ -522,6 +523,7 @@
         else {
           gymSessionDate = '';
           writeStorage('neu-schedule-gym-session-v7', gymSessionDate);
+          schedulePushSync();
         }
         renderAll();
         return;
@@ -591,18 +593,145 @@
     renderPanels();
   }
 
+  const pushBase = () => String(window.PUSH_API_BASE || '').replace(/\/$/, '');
+  let pushSyncTimer = null;
+  const pushToken = () => readStorage('neu-schedule-push-token-v1');
+  function pushStatus(message) { $('pushStatus').textContent = message; }
+  async function pushRequest(path, body, token) {
+    const response = await fetch(`${pushBase()}${path}`, {
+      method: body === undefined ? 'GET' : 'POST',
+      headers: { ...(body === undefined ? {} : { 'content-type': 'application/json' }), ...(token ? { authorization: `Bearer ${token}` } : {}) },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      cache: 'no-store'
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || `请求失败 (${response.status})`);
+    return result;
+  }
+  function b64ToBytes(value) {
+    const base64 = value.replace(/-/g, '+').replace(/_/g, '/');
+    const decoded = atob(base64.padEnd(Math.ceil(base64.length / 4) * 4, '='));
+    return Uint8Array.from(decoded, char => char.charCodeAt(0));
+  }
+  function buildPushJobs() {
+    const now = Date.now();
+    const jobs = [];
+    const add = (id, date, minute, before, title, body, ttl = 600) => {
+      const dueAt = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, minute - before).getTime();
+      if (dueAt > now + 5000) jobs.push({ id, dueAt, title, body, ttl });
+    };
+    for (let week = 1; week <= D.semester.totalWeeks; week++) {
+      for (let day = 1; day <= 7; day++) {
+        const date = addDays(weekStart(week), day - 1);
+        if (addDays(date, 1).getTime() < now) continue;
+        const key = dateKey(date);
+        for (const course of activeCourses(day, week)) {
+          const time = periodTime(course);
+          const start = timeToMinutes(time.start), end = timeToMinutes(time.end);
+          const suffix = `${key}-c${course._id}`;
+          add(`${suffix}-p30`, date, start, 30, '30 分钟后上课', `${course.name} · ${course.location}${course.note ? ` · ${course.note}` : ''}`, 900);
+          add(`${suffix}-p5`, date, start, 5, '5 分钟后上课', `${course.name} · ${course.location}`, 600);
+          add(`${suffix}-e30`, date, end, 30, '30 分钟后下课', course.name, 900);
+        }
+        dayFreeWindows(day, week).forEach(([start, end], index) => {
+          const suffix = `${key}-g${index}`;
+          add(`${suffix}-open`, date, start, 30, '30 分钟后可以健身', `${minutesToTime(start)}–${minutesToTime(end)} 可去健身`, 900);
+          const activeSession = gymSessionDate.startsWith(`${key}|`) && day === mondayIndex(nowDate()) && week === currentWeek() && end === Number(gymSessionDate.split('|')[1]);
+          add(`${suffix}-close`, date, end, 30, activeSession ? '正在健身 · 30 分钟后时段结束' : '可健身时段还有 30 分钟', `${minutesToTime(end)} 结束`, 900);
+        });
+      }
+    }
+    return jobs.sort((a, b) => a.dueAt - b.dueAt || a.id.localeCompare(b.id));
+  }
+  async function syncPush() {
+    const token = pushToken();
+    if (!token || !pushBase()) return;
+    const registration = await navigator.serviceWorker.ready;
+    const subscription = await registration.pushManager.getSubscription();
+    if (!subscription || subscription.endpoint !== readStorage('neu-schedule-push-endpoint-v1')) {
+      pushStatus('推送订阅已变化，请输入配对码重新开启。');
+      return;
+    }
+    const result = await pushRequest('/sync', { jobs: buildPushJobs() }, token);
+    pushStatus(`后台提醒已同步：${result.count} 条未来提醒。`);
+  }
+  function schedulePushSync() {
+    if (!pushToken() || !pushBase()) return;
+    clearTimeout(pushSyncTimer);
+    pushSyncTimer = setTimeout(() => syncPush().catch(error => pushStatus(`同步失败：${error.message}`)), 400);
+  }
+  async function enablePush() {
+    if (!pushBase()) { pushStatus('后台服务尚未部署。'); return; }
+    if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) {
+      pushStatus('当前浏览器不支持 Web Push。'); return;
+    }
+    const code = $('pairingCode').value.trim();
+    if (!code) { pushStatus('请输入配对码。'); return; }
+    if (/iPhone|iPad|iPod/.test(navigator.userAgent) && !navigator.standalone && !matchMedia('(display-mode: standalone)').matches) {
+      pushStatus('iPhone 请先加入主屏幕，再从主屏幕打开课表。'); return;
+    }
+    const permission = await Notification.requestPermission();
+    if (permission !== 'granted') { pushStatus('通知权限未开启，请在系统设置中允许通知。'); return; }
+    pushStatus('正在建立订阅…');
+    try {
+      const config = await pushRequest('/config');
+      const registration = await navigator.serviceWorker.register('./sw.js?v=14', { updateViaCache: 'none' });
+      let subscription = await registration.pushManager.getSubscription();
+      if (subscription) {
+        const oldKey = subscription.options?.applicationServerKey;
+        if (oldKey && Array.from(new Uint8Array(oldKey)).join(',') !== Array.from(b64ToBytes(config.publicKey)).join(',')) {
+          await subscription.unsubscribe();
+          subscription = null;
+        }
+      }
+      if (!subscription) subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(config.publicKey) });
+      const result = await pushRequest('/register', { code, subscription: subscription.toJSON() });
+      writeStorage('neu-schedule-push-token-v1', result.token);
+      writeStorage('neu-schedule-push-endpoint-v1', subscription.endpoint);
+      $('pairingCode').value = '';
+      await syncPush();
+    } catch (error) { pushStatus(`开启失败：${error.message}`); }
+  }
+  async function disablePush() {
+    const token = pushToken();
+    if (!token) { pushStatus('后台提醒尚未开启。'); return; }
+    try {
+      await pushRequest('/disable', {}, token);
+      const subscription = await (await navigator.serviceWorker.ready).pushManager.getSubscription();
+      if (subscription) await subscription.unsubscribe();
+      writeStorage('neu-schedule-push-token-v1', '');
+      writeStorage('neu-schedule-push-endpoint-v1', '');
+      pushStatus('后台提醒已关闭。');
+    } catch (error) { pushStatus(`关闭失败：${error.message}`); }
+  }
+  function setupPush() {
+    $('pushSettingsButton').addEventListener('click', () => {
+      pushStatus(!pushBase() ? '后台服务尚未部署。' : pushToken() ? '后台提醒已开启。' : '输入配对码后开启后台提醒。');
+      $('pushDialog').showModal();
+    });
+    $('closePushDialog').addEventListener('click', () => $('pushDialog').close());
+    $('enablePush').addEventListener('click', enablePush);
+    $('disablePush').addEventListener('click', disablePush);
+    $('testPush').addEventListener('click', async () => {
+      if (!pushToken()) { pushStatus('请先开启后台提醒。'); return; }
+      try { await pushRequest('/test', {}, pushToken()); pushStatus('测试通知已发出，请查看系统通知。'); }
+      catch (error) { pushStatus(`测试失败：${error.message}`); }
+    });
+  }
+
   function boot() {
     setupInteractions();
+    setupPush();
     renderAll();
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js?v=13', { updateViaCache: 'none' }).catch(() => {});
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js?v=14', { updateViaCache: 'none' }).then(schedulePushSync).catch(() => {});
     setInterval(() => {
       if (refreshDailyState()) { renderAll(); return; }
       renderHeader();
       if (viewMode === 'week') renderWeekView();
       else renderDayView();
     }, 60000);
-    document.addEventListener('visibilitychange', () => { if (!document.hidden) renderAll(); });
-    window.addEventListener('focus', renderAll);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) { renderAll(); schedulePushSync(); } });
+    window.addEventListener('focus', () => { renderAll(); schedulePushSync(); });
   }
 
   boot();

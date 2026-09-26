@@ -1,0 +1,16 @@
+{
+  "name": "neu-schedule-push-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "dev": "wrangler dev --test-scheduled",
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "@mmmike/web-push": "1.3.0"
+  },
+  "devDependencies": {
+    "wrangler": "4.140.0"
+  }
+}

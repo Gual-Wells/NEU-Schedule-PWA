@@ -1,0 +1,5 @@
+worker/node_modules/
+worker/.wrangler/
+worker/.wrangler-out/
+worker/.dev.vars
+worker/.secrets*

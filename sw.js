@@ -1,11 +1,12 @@
-const CACHE = 'neu-schedule-v13';
+const CACHE = 'neu-schedule-v14';
 const CORE = [
   './',
   './index.html',
-  './styles.css?v=13',
-  './data.js?v=13',
-  './app.js?v=13',
-  './manifest.webmanifest?v=13',
+  './styles.css?v=14',
+  './data.js?v=14',
+  './push-config.js?v=14',
+  './app.js?v=14',
+  './manifest.webmanifest?v=14',
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/apple-touch-icon.png'
@@ -13,6 +14,30 @@ const CORE = [
 
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(CORE)).then(() => self.skipWaiting()));
+});
+
+self.addEventListener('push', event => {
+  event.waitUntil((async () => {
+    let message;
+    try { message = event.data?.json(); } catch (_) {}
+    const notice = message?.web_push === 8030 ? message.notification : null;
+    const title = typeof notice?.title === 'string' && notice.title ? notice.title : '课表提醒';
+    const body = typeof notice?.body === 'string' ? notice.body : '';
+    const url = typeof notice?.navigate === 'string' && new URL(notice.navigate, self.location.href).origin === self.location.origin
+      ? notice.navigate : new URL('./', self.registration.scope).href;
+    await self.registration.showNotification(title, { body, icon: './icons/icon-192.png', badge: './icons/icon-192.png', data: { url } });
+  })());
+});
+
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+  event.waitUntil((async () => {
+    const url = event.notification.data?.url || new URL('./', self.registration.scope).href;
+    const windows = await clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const found = windows.find(client => client.url.startsWith(self.registration.scope));
+    if (found) { await found.focus(); if ('navigate' in found) await found.navigate(url); }
+    else await clients.openWindow(url);
+  })());
 });
 
 self.addEventListener('activate', event => {

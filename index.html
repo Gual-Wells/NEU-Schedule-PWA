@@ -10,10 +10,10 @@
   <meta name="apple-mobile-web-app-title" content="课表" />
   <meta name="format-detection" content="telephone=no" />
   <title>课表</title>
-  <link rel="manifest" href="./manifest.webmanifest?v=13" />
+  <link rel="manifest" href="./manifest.webmanifest?v=14" />
   <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
   <link rel="icon" href="./icons/icon-192.png" />
-  <link rel="stylesheet" href="./styles.css?v=13" />
+  <link rel="stylesheet" href="./styles.css?v=14" />
 </head>
 <body>
   <main class="app-shell" id="app">
@@ -22,7 +22,7 @@
         <p class="header-meta" id="headerMeta"></p>
         <h1>个人课表 <small>NEU SCHEDULE</small></h1>
       </div>
-      <button class="ghost-button" id="jumpToday" type="button" hidden>回到今天</button>
+      <div class="header-actions"><button class="ghost-button" id="pushSettingsButton" type="button">提醒</button><button class="ghost-button" id="jumpToday" type="button" hidden>回到今天</button></div>
     </header>
 
     <section class="week-card" id="weekCard">
@@ -92,7 +92,20 @@
     </form>
   </dialog>
 
-  <script src="./data.js?v=13"></script>
-  <script src="./app.js?v=13"></script>
+  <dialog id="pushDialog" class="sheet-dialog">
+    <div class="sheet push-sheet">
+      <div class="sheet-grabber"></div>
+      <div class="sheet-head"><div><span class="sheet-kicker">后台推送</span><h2>课程与健身提醒</h2></div><button class="close-button" id="closePushDialog" type="button" aria-label="关闭">×</button></div>
+      <p class="push-help">iPhone 请先把课表加入主屏幕，再从主屏幕打开。开启后，Cloudflare 会按课表时间发送系统通知。</p>
+      <label class="push-label" for="pairingCode">配对码</label>
+      <input id="pairingCode" class="push-input" type="password" autocomplete="off" placeholder="输入部署时生成的配对码" />
+      <p class="push-status" id="pushStatus" role="status"></p>
+      <div class="push-actions"><button id="enablePush" type="button">开启后台提醒</button><button id="testPush" type="button">发送测试</button><button id="disablePush" type="button">关闭提醒</button></div>
+    </div>
+  </dialog>
+
+  <script src="./data.js?v=14"></script>
+  <script src="./push-config.js?v=14"></script>
+  <script src="./app.js?v=14"></script>
 </body>
 </html>

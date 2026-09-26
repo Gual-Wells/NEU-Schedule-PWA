@@ -29,6 +29,14 @@
 
 ## PWA
 
-纯 HTML / CSS / JavaScript，无框架、无广告、无第三方运行时依赖。GitHub Pages 由 `.github/workflows/pages.yml` 自动部署。
+页面仍是纯 HTML / CSS / JavaScript，无框架、无广告、无第三方页面运行时依赖。GitHub Pages 由 `.github/workflows/pages.yml` 自动部署。
 
-静态资源使用版本化 URL；Service Worker 版本为 `neu-schedule-v13`，导航优先网络、离线回退缓存，避免发布新版本后继续显示旧 JS/CSS。部署前检查数据约束和日程状态切换。
+静态资源使用版本化 URL；Service Worker 版本为 `neu-schedule-v14`，导航优先网络、离线回退缓存，避免发布新版本后继续显示旧 JS/CSS。部署前检查数据约束、日程状态切换和推送计划。
+
+## 后台提醒
+
+页面的“提醒”按钮可开启 Web Push。iPhone 需要先把课表加入主屏幕，并从主屏幕打开；首次开启由用户点击按钮申请通知权限，并输入配对码。开启后可发送一条测试通知，也可随时关闭并删除服务端订阅。
+
+Cloudflare Worker 地址保存在 `push-config.js`。Worker、每分钟 Cron、D1 数据库和部署命令见 [`worker/README.md`](worker/README.md)。页面按现有课表数据生成整学期未来提醒，Worker 只负责保存与投递。翘课、撤销、健身状态变化以及重新打开页面会重同步计划；跨日清空旷课也会重同步。已跳过的课不会继续推送该课提醒。推送数据采用 WebKit Declarative Web Push 格式，Service Worker 同时处理传统 Web Push 与点击打开日程。
+
+推送属于尽力投递，不是保证准点的闹钟。设备需保留通知权限与有效订阅；更换设备或重装 PWA 后需要重新开启。配对码和 VAPID 私钥只保存在 Cloudflare Secret 与本地备份，不进入公开仓库。

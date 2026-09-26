@@ -66,6 +66,14 @@ button:disabled { cursor: default; opacity: .5; }
   text-shadow: 0 1px 1px #123f72;
 }
 .header-meta { margin: 0 0 2px; color: #dcecff; font-size: 10px; }
+.header-actions { display: flex; gap: 5px; align-items: center; }
+.push-sheet { max-width: 420px; }
+.push-help { margin: 10px 0; color: var(--muted); line-height: 1.55; }
+.push-label { display: block; margin: 10px 0 4px; font-weight: 700; }
+.push-input { display: block; width: 100%; padding: 9px; border: 1px solid var(--line-strong); border-radius: 3px; background: #fff; color: var(--text); font: inherit; }
+.push-status { min-height: 2.8em; margin: 10px 0; color: var(--muted); line-height: 1.4; }
+.push-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.push-actions button { padding: 7px 10px; border: 1px solid #7d9bb9; border-radius: 3px; background: linear-gradient(#fff, #dce8f4 49%, #c9d9e9 50%, #e8eff7); color: #1e507f; box-shadow: 0 1px 0 #fff inset; font-weight: 700; }
 h1 { margin: 0; font-size: 20px; line-height: 1.1; letter-spacing: .03em; }
 h1 small { margin-left: 6px; color: #c4dcf5; font-size: 9px; font-weight: 400; letter-spacing: .14em; white-space: nowrap; }
 h2 { margin: 0; font-size: 17px; line-height: 1.2; }

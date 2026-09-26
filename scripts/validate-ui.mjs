@@ -44,8 +44,12 @@ const sandbox = {
   },
   localStorage: { getItem: key => store.get(key) || null, setItem: (key, value) => store.set(key, value) },
   navigator: {},
+  location: { search: '' },
+  URLSearchParams,
   requestAnimationFrame() {},
   setInterval(fn) { tick = fn; },
+  setTimeout() {},
+  clearTimeout() {},
   Intl,
   console
 };
