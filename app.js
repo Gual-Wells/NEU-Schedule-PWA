@@ -46,8 +46,15 @@
   try { skipped = new Set(JSON.parse(localStorage.getItem('neu-schedule-skipped-v7') || '[]')); }
   catch (_) { skipped = new Set(); }
   let activeDateKey = dateKey(nowDate());
-  let gymSessionDate = '';
-  try { gymSessionDate = localStorage.getItem('neu-schedule-gym-session-v7') || ''; } catch (_) {}
+  const gymStore = window.GymStore.create(localStorage);
+  let gymMessage = '';
+  const activeGymSession = () => gymStore.active();
+  const formatDuration = (ms, withSeconds = false) => {
+    const seconds = Math.max(0, Math.floor(ms / 1000));
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor(seconds % 3600 / 60);
+    return withSeconds ? `${pad(hours)}:${pad(minutes)}:${pad(seconds % 60)}` : `${hours ? `${hours}h` : ''}${minutes}m`;
+  };
 
   function expandWeeks(spec) {
     const out = new Set();
@@ -89,9 +96,9 @@
       .filter(course => course.weekday === day && course._weekSet.has(week))
       .sort((a, b) => a.start - b.start || a.end - b.end);
   }
+  const isSkipped = (course, week) => skipped.has(skipKey(courseDate(course, week), course));
   function activeCourses(day, week) {
-    const date = addDays(weekStart(week), day - 1);
-    return rawCourses(day, week).filter(course => !skipped.has(skipKey(date, course)));
+    return rawCourses(day, week).filter(course => !isSkipped(course, week));
   }
 
   function gymSlots(day) {
@@ -146,16 +153,21 @@
   const selectedDate = () => addDays(weekStart(selectedWeek), selectedDay - 1);
   function readStorage(key) { try { return localStorage.getItem(key); } catch (_) { return null; } }
   function writeStorage(key, value) { try { localStorage.setItem(key, value); } catch (_) {} }
-  let viewMode = new URLSearchParams(location.search).get('view') === 'day' || readStorage('neu-schedule-view-mode') === 'day' ? 'day' : 'week';
+  const requestedView = new URLSearchParams(location.search).get('view') || readStorage('neu-schedule-view-mode');
+  let viewMode = ['week', 'day', 'gym'].includes(requestedView) ? requestedView : 'week';
   let timelineScrollTop = null;
   let firstTimelineRender = true;
   let dayFocus = true;
+  let gymPeriod = 'week';
+  let gymChartWeeks = 12;
+  let gymChartMetric = 'duration';
+  let gymShowAll = false;
 
   function renderHeader() {
     const now = nowDate();
     $('headerMeta').textContent = `${fmtHeader.format(now)} · ${D.semester.name}`;
-    $('jumpToday').hidden = selectedWeek === currentWeek() && selectedDay === mondayIndex(now);
-    $('toolbarNote').textContent = selectedWeek === currentWeek() ? '本周' : `第 ${selectedWeek} 周`;
+    $('jumpToday').hidden = viewMode === 'gym' || selectedWeek === currentWeek() && selectedDay === mondayIndex(now);
+    $('toolbarNote').textContent = viewMode === 'gym' ? '' : selectedWeek === currentWeek() ? '本周' : `第 ${selectedWeek} 周`;
   }
 
   function renderWeekCard() {
@@ -169,7 +181,7 @@
     $('dayStrip').innerHTML = Array.from({ length: 7 }, (_, i) => {
       const day = i + 1;
       const date = addDays(start, i);
-      const hasClass = activeCourses(day, selectedWeek).length > 0;
+      const hasClass = rawCourses(day, selectedWeek).length > 0;
       return `<button class="day-chip ${day === selectedDay ? 'selected' : ''} ${dateKey(date) === todayKey ? 'today' : ''} ${hasClass ? 'has-class' : ''}" data-day="${day}" type="button">
         <span class="dow">周${weekdayNames[day]}</span>
         <span class="dom">${date.getDate()}</span>
@@ -187,11 +199,15 @@
 
   function renderPanels() {
     document.querySelectorAll('.segment').forEach(button => button.classList.toggle('active', button.dataset.mode === viewMode));
+    $('app').classList.toggle('gym-mode', viewMode === 'gym');
+    $('weekCard').hidden = viewMode === 'gym';
     $('weekPanel').classList.toggle('active', viewMode === 'week');
     $('dayPanel').classList.toggle('active', viewMode === 'day');
+    $('gymPanel').classList.toggle('active', viewMode === 'gym');
     $('weekCard').classList.toggle('show-days', viewMode === 'day');
     if (viewMode === 'week') renderWeekView();
-    else renderDayView();
+    else if (viewMode === 'day') renderDayView();
+    else renderGymView();
   }
 
   function renderWeekView() {
@@ -243,15 +259,17 @@
         pieces.push(`<div class="gym-guide ${aligned ? 'aligned' : 'aux'}" style="top:${pct(boundary)}%"></div>`);
       }
 
-      for (const course of activeCourses(day, selectedWeek)) {
+      for (const course of rawCourses(day, selectedWeek)) {
         const time = periodTime(course);
         const start = timeToMinutes(time.start);
         const end = timeToMinutes(time.end);
         const duration = end - start;
-        pieces.push(`<button class="course-block ${duration < 95 ? 'compact' : ''}" type="button" data-course="${course._id}" style="top:${pct(start)}%;height:${pct(end) - pct(start)}%;background:${course._color}">
+        const skippedToday = isSkipped(course, selectedWeek);
+        pieces.push(`<button class="course-block ${duration < 95 ? 'compact' : ''} ${skippedToday ? 'skipped' : ''}" type="button" data-course="${course._id}" style="top:${pct(start)}%;height:${pct(end) - pct(start)}%;--course-color:${course._color}">
           <span class="course-title">${escapeHtml(shortCourseName(course.name, course.end - course.start + 1))}</span>
           <span class="course-period">第${course.start}–${course.end}节</span>
           <span class="course-time">${time.start}–${time.end}</span>
+          ${skippedToday ? '<span class="course-skip-label">已翘</span>' : ''}
         </button>`);
       }
 
@@ -312,10 +330,8 @@
       skipped = new Set([...skipped].filter(key => validKeys.has(key)));
       persistSkipped();
     }
-    if (changedDay || (gymSessionDate && !gymSessionDate.startsWith(`${today}|`))) {
-      gymSessionDate = '';
-      writeStorage('neu-schedule-gym-session-v7', gymSessionDate);
-    }
+    try { if (gymStore.reconcile(now.getTime())) schedulePushSync(); }
+    catch (error) { gymMessage = `训练记录保存失败：${error.message}`; }
     activeDateKey = today;
     if (wasShowingToday) {
       selectedWeek = currentWeek();
@@ -328,22 +344,41 @@
   }
   const canSkipCourse = (course) => Boolean(course && course._weekSet.has(selectedWeek) && dateKey(courseDate(course, selectedWeek)) === dateKey(nowDate()));
   function startGymSession() {
-    const minute = nowDate().getHours() * 60 + nowDate().getMinutes();
-    const slot = gymSlots(selectedDay).find(([start, end]) => start <= minute && minute < end);
-    gymSessionDate = slot ? `${dateKey(selectedDate())}|${slot[1]}` : '';
-    writeStorage('neu-schedule-gym-session-v7', gymSessionDate);
-    schedulePushSync();
+    const now = nowDate();
+    const minute = now.getHours() * 60 + now.getMinutes();
+    const slot = gymSlots(mondayIndex(now)).find(([start, end]) => start <= minute && minute < end);
+    if (!slot) { gymMessage = '现在不在健身房开放时段。'; return; }
+    try {
+      const closesAt = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, slot[1]).getTime();
+      gymStore.start(now.getTime(), closesAt);
+      gymMessage = '训练已开始，离开页面后计时仍按开始时间计算。';
+      schedulePushSync();
+    } catch (error) { gymMessage = `开始失败：${error.message}`; }
   }
-  function skipCourse(course, gym = false) {
+  function endGymSession() {
+    try {
+      gymStore.stop(Date.now());
+      gymMessage = '训练已保存。';
+      schedulePushSync();
+    } catch (error) { gymMessage = `结束失败：${error.message}`; }
+  }
+  function skipCourse(course) {
     refreshDailyState();
     if (!canSkipCourse(course)) return false;
     skipped.add(skipKey(courseDate(course, selectedWeek), course));
     persistSkipped();
-    if (gym) startGymSession();
     renderAll();
     return true;
   }
-  function dayState(date, courses) {
+  function restoreCourse(course) {
+    refreshDailyState();
+    if (!canSkipCourse(course)) return false;
+    skipped.delete(skipKey(courseDate(course, selectedWeek), course));
+    persistSkipped();
+    renderAll();
+    return true;
+  }
+  function dayState(date, courses, skippedCourses) {
     const now = nowDate();
     const live = dateKey(date) === dateKey(now);
     const minute = now.getHours() * 60 + now.getMinutes();
@@ -360,7 +395,8 @@
     });
     const openNow = isInside(open, minute);
     const freeNow = isInside(free, minute);
-    const gymActive = gymSessionDate.startsWith(`${dateKey(date)}|`) && minute < Number(gymSessionDate.split('|')[1]) && openNow;
+    const session = activeGymSession();
+    const gymActive = Boolean(session);
     const notices = [];
     if (ongoing) {
       const end = timeToMinutes(periodTime(ongoing).end);
@@ -371,8 +407,9 @@
       const start = timeToMinutes(periodTime(course).start);
       notices.push({ kind: 'soon', text: `${start - minute} 分钟后去 ${course.location} 上${course.name}`, note: course.note });
     }
-    if (gymActive) notices.push({ kind: 'gym', text: '正在健身' });
+    if (gymActive) notices.push({ kind: 'gym', text: `正在健身 · ${formatDuration(now.getTime() - session.startAt)}` });
     else if (freeNow) notices.push({ kind: 'gym', text: '健身房开放，现在可以去' });
+    else if (openNow && ongoing) notices.push({ kind: 'gym', text: '健身房开放，与当前课程时间重叠' });
     const nextFree = free.find(([start]) => start > minute && start - minute <= 30);
     if (nextFree) {
       const physicalOpening = open.some(([start]) => start === nextFree[0]);
@@ -381,26 +418,30 @@
     const closing = open.find(([start, end]) => start <= minute && minute < end && end - minute <= 30);
     if (closing) notices.push({ kind: 'soon', text: `健身房 ${closing[1] - minute} 分钟后关闭` });
     let actions = '';
-    if (freeNow) actions += `<button type="button" class="action-button gym-action" data-action="${gymActive ? 'end-gym' : 'start-gym'}">${gymActive ? '结束健身' : '开始健身'}</button>`;
+    if (openNow || gymActive) actions += `<button type="button" class="action-button gym-action" data-action="${gymActive ? 'end-gym' : 'start-gym'}">${gymActive ? '结束健身' : '开始健身'}</button>`;
     for (const course of [ongoing, ...soon].filter(Boolean)) {
-      const t = periodTime(course);
-      const start = timeToMinutes(t.start), end = timeToMinutes(t.end);
-      const overlap = open.some(([a, b]) => start < b && end > a);
-      actions += `<button type="button" class="action-button skip-action" data-skip="${course._id}" data-gym="${overlap && openNow ? 'yes' : 'no'}">${overlap && openNow ? '翘课去健身' : `翘掉${shortCourseName(course.name, course.end - course.start + 1)}`}</button>`;
+      actions += `<button type="button" class="action-button skip-action" data-skip="${course._id}">翘掉${shortCourseName(course.name, course.end - course.start + 1)}</button>`;
     }
-    const title = ongoing ? `正在上 ${shortCourseName(ongoing.name, ongoing.end - ongoing.start + 1)}` : gymActive ? '正在健身' : freeNow ? '现在可以去健身' : '当前没有安排';
+    for (const course of skippedCourses) {
+      const time = periodTime(course);
+      const start = timeToMinutes(time.start), end = timeToMinutes(time.end);
+      if (start <= minute && minute < end) notices.push({ kind: 'skip', text: `已翘 · ${course.name}正在进行，${time.end}结束` });
+      else if (start > minute && start - minute <= 30) notices.push({ kind: 'skip', text: `已翘 · ${course.name}将在 ${start - minute} 分钟后开始` });
+    }
+    const title = gymActive ? '正在健身' : ongoing ? `正在上 ${shortCourseName(ongoing.name, ongoing.end - ongoing.start + 1)}` : freeNow ? '现在可以去健身' : '当前没有安排';
     return { live, minute, title, subtitle: `${minutesToTime(minute)} · ${notices.length ? '当前与即将发生' : '看看今天的时间图'}`, notices, actions };
   }
   function renderDayView() {
     const date = selectedDate();
-    const courses = activeCourses(selectedDay, selectedWeek);
-    const state = dayState(date, courses);
+    const courses = rawCourses(selectedDay, selectedWeek);
+    const skippedCourses = courses.filter(course => isSkipped(course, selectedWeek));
+    const state = dayState(date, courses.filter(course => !isSkipped(course, selectedWeek)), skippedCourses);
     const now = nowDate();
     const hourAngle = (now.getHours() % 12 + now.getMinutes() / 60) * 30;
     const minuteAngle = now.getMinutes() * 6;
     const skipCount = rawCourses(selectedDay, selectedWeek).filter(course => skipped.has(skipKey(date, course))).length;
     $('dayDashboard').innerHTML = `
-      <div class="dashboard-date"><strong>${weekdayLong[selectedDay]} · ${fmtMD.format(date)}</strong><span>第 ${selectedWeek} 周 · ${courses.length} 段课程</span></div>
+      <div class="dashboard-date"><strong>${weekdayLong[selectedDay]} · ${fmtMD.format(date)}</strong><span>第 ${selectedWeek} 周 · ${courses.length} 段课程${skippedCourses.length ? ` · 已翘 ${skippedCourses.length}` : ''}</span></div>
       <div class="now-row">
         <div class="clock" aria-label="当前时间 ${minutesToTime(now.getHours() * 60 + now.getMinutes())}"><i class="hand hour" style="--rotation:${hourAngle}deg"></i><i class="hand minute" style="--rotation:${minuteAngle}deg"></i><i class="clock-center"></i></div>
         <div class="now-text"><span class="clock-digital">${minutesToTime(now.getHours() * 60 + now.getMinutes())}</span><h2>${escapeHtml(state.title)}</h2><p>${escapeHtml(state.subtitle)}</p></div>
@@ -426,8 +467,9 @@
     for (const course of courses) {
       const t = periodTime(course);
       const start = timeToMinutes(t.start), end = timeToMinutes(t.end);
-      parts.push(`<button type="button" class="map-course" data-course="${course._id}" style="top:${pct(start)}%;height:${pct(end) - pct(start)}%;--course-color:${course._color}">
-        <strong>${escapeHtml(course.name)}</strong><span>第${course.start}–${course.end}节 · ${t.start}–${t.end}</span><span>${escapeHtml(course.location)}${course.className ? ` · ${escapeHtml(course.className)}` : ''}${course.note ? ` · ${escapeHtml(course.note)}` : ''}</span>
+      const skippedToday = isSkipped(course, selectedWeek);
+      parts.push(`<button type="button" class="map-course ${skippedToday ? 'skipped' : ''}" data-course="${course._id}" style="top:${pct(start)}%;height:${pct(end) - pct(start)}%;--course-color:${course._color}">
+        <strong>${escapeHtml(course.name)}${skippedToday ? ' · 已翘' : ''}</strong><span>第${course.start}–${course.end}节 · ${t.start}–${t.end}</span><span>${escapeHtml(course.location)}${course.className ? ` · ${escapeHtml(course.className)}` : ''}${course.note ? ` · ${escapeHtml(course.note)}` : ''}</span>
       </button>`);
     }
     if (state.live && state.minute >= DAY_START && state.minute <= DAY_END)
@@ -459,7 +501,7 @@
     $('skipCourseButton').dataset.course = String(id);
     const canSkip = canSkipCourse(course);
     $('skipCourseButton').disabled = !canSkip;
-    $('skipCourseButton').textContent = canSkip ? '翘掉这节课' : '只能标记今天的课';
+    $('skipCourseButton').textContent = canSkip ? isSkipped(course, selectedWeek) ? '恢复这节课' : '翘掉这节课' : '只能标记今天的课';
     $('courseDialog').showModal();
   }
 
@@ -505,7 +547,8 @@
     $('skipCourseButton').addEventListener('click', () => {
       const course = D.courses[Number($('skipCourseButton').dataset.course)];
       if (!course) return;
-      if (skipCourse(course)) $('courseDialog').close();
+      const changed = isSkipped(course, selectedWeek) ? restoreCourse(course) : skipCourse(course);
+      if (changed) $('courseDialog').close();
     });
     $('dayMap').addEventListener('click', event => {
       const button = event.target.closest('[data-course]');
@@ -514,17 +557,13 @@
     $('dayDashboard').addEventListener('click', event => {
       const skip = event.target.closest('[data-skip]');
       if (skip) {
-        skipCourse(D.courses[Number(skip.dataset.skip)], skip.dataset.gym === 'yes');
+        skipCourse(D.courses[Number(skip.dataset.skip)]);
         return;
       }
       const action = event.target.closest('[data-action]');
       if (action) {
         if (action.dataset.action === 'start-gym') startGymSession();
-        else {
-          gymSessionDate = '';
-          writeStorage('neu-schedule-gym-session-v7', gymSessionDate);
-          schedulePushSync();
-        }
+        else endGymSession();
         renderAll();
         return;
       }
@@ -546,13 +585,75 @@
       const undo = event.target.closest('[data-undo]');
       if (undo) {
         const course = D.courses[Number(undo.dataset.undo)];
-        refreshDailyState();
-        if (course && canSkipCourse(course)) {
-          skipped.delete(skipKey(courseDate(course, selectedWeek), course));
-          persistSkipped();
-          renderAll();
-        }
+        if (course) restoreCourse(course);
       }
+    });
+
+    $('gymPanel').addEventListener('click', event => {
+      const period = event.target.closest('[data-gym-period]');
+      if (period) { gymPeriod = period.dataset.gymPeriod; renderGymView(); return; }
+      const record = event.target.closest('[data-session]');
+      if (record) {
+        const session = gymStore.list().find(item => item.id === record.dataset.session);
+        if (!session || session.endAt === null) return;
+        $('sessionDialog').dataset.session = session.id;
+        $('sessionStart').value = dateTimeInput(session.startAt);
+        $('sessionEnd').value = dateTimeInput(session.endAt);
+        $('sessionStatus').textContent = session.endReason === 'closing' ? '此记录在健身房关闭时自动结束，请核对实际结束时间。' : '';
+        $('sessionDialog').showModal();
+        return;
+      }
+      const command = event.target.closest('[data-gym-command]');
+      if (!command) return;
+      if (command.dataset.gymCommand === 'start') startGymSession();
+      else if (command.dataset.gymCommand === 'stop') endGymSession();
+      else if (command.dataset.gymCommand === 'toggle-all') gymShowAll = !gymShowAll;
+      else if (command.dataset.gymCommand === 'import') { $('gymImportFile').click(); return; }
+      else if (command.dataset.gymCommand === 'export') {
+        const blob = new Blob([JSON.stringify({ version: 1, sessions: gymStore.list() }, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `neu-gym-${dateKey(nowDate())}.json`;
+        link.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        return;
+      }
+      renderAll();
+    });
+    $('gymPanel').addEventListener('change', async event => {
+      if (event.target.id === 'gymChartWeeks') gymChartWeeks = Number(event.target.value);
+      else if (event.target.id === 'gymChartMetric') gymChartMetric = event.target.value;
+      else if (event.target.id === 'gymImportFile') {
+        const file = event.target.files?.[0];
+        if (!file) return;
+        try {
+          const backup = JSON.parse(await file.text());
+          if (backup.version !== 1) throw new Error('备份版本不受支持。');
+          const count = gymStore.importSessions(backup.sessions);
+          gymMessage = `已导入 ${count} 条记录。`;
+        } catch (error) { gymMessage = `导入失败：${error.message}`; }
+      } else return;
+      renderGymView();
+    });
+    $('closeSessionDialog').addEventListener('click', () => $('sessionDialog').close());
+    $('sessionForm').addEventListener('submit', event => {
+      event.preventDefault();
+      try {
+        gymStore.revise($('sessionDialog').dataset.session, new Date($('sessionStart').value).getTime(), new Date($('sessionEnd').value).getTime());
+        gymMessage = '训练时间已修改。';
+        $('sessionDialog').close();
+        renderGymView();
+      } catch (error) { $('sessionStatus').textContent = error.message; }
+    });
+    $('deleteSession').addEventListener('click', () => {
+      if (!confirm('确定删除这条训练记录吗？')) return;
+      try {
+        gymStore.remove($('sessionDialog').dataset.session);
+        gymMessage = '训练记录已删除。';
+        $('sessionDialog').close();
+        renderGymView();
+      } catch (error) { $('sessionStatus').textContent = error.message; }
     });
 
     document.querySelectorAll('.segment').forEach(button => {
@@ -560,8 +661,7 @@
         viewMode = button.dataset.mode;
         dayFocus = true;
         writeStorage('neu-schedule-view-mode', viewMode);
-        renderWeekCard();
-        renderPanels();
+        renderAll();
       });
     });
 
@@ -625,18 +725,25 @@
         const date = addDays(weekStart(week), day - 1);
         if (addDays(date, 1).getTime() < now) continue;
         const key = dateKey(date);
-        for (const course of activeCourses(day, week)) {
+        for (const course of rawCourses(day, week)) {
           const time = periodTime(course);
           const start = timeToMinutes(time.start), end = timeToMinutes(time.end);
           const suffix = `${key}-c${course._id}`;
-          add(`${suffix}-p30`, date, start, 30, '30 分钟后上课', `${course.name} · ${course.location}${course.note ? ` · ${course.note}` : ''}`, 900);
-          add(`${suffix}-p5`, date, start, 5, '5 分钟后上课', `${course.name} · ${course.location}`, 600);
-          add(`${suffix}-e30`, date, end, 30, '30 分钟后下课', course.name, 900);
+          if (isSkipped(course, week)) {
+            add(`${suffix}-p30`, date, start, 30, '已翘课程 · 30 分钟后开始', `${course.name} · ${time.start}–${time.end} · ${course.location}`, 900);
+            add(`${suffix}-p5`, date, start, 5, '已翘课程 · 5 分钟后开始', `${course.name} · ${course.location}`, 600);
+            add(`${suffix}-e30`, date, end, 30, '已翘课程 · 30 分钟后结束', `${course.name} · ${time.end}结束`, 900);
+          } else {
+            add(`${suffix}-p30`, date, start, 30, '30 分钟后上课', `${course.name} · ${course.location}${course.note ? ` · ${course.note}` : ''}`, 900);
+            add(`${suffix}-p5`, date, start, 5, '5 分钟后上课', `${course.name} · ${course.location}`, 600);
+            add(`${suffix}-e30`, date, end, 30, '30 分钟后下课', course.name, 900);
+          }
         }
         dayFreeWindows(day, week).forEach(([start, end], index) => {
           const suffix = `${key}-g${index}`;
           add(`${suffix}-open`, date, start, 30, '30 分钟后可以健身', `${minutesToTime(start)}–${minutesToTime(end)} 可去健身`, 900);
-          const activeSession = gymSessionDate.startsWith(`${key}|`) && day === mondayIndex(nowDate()) && week === currentWeek() && end === Number(gymSessionDate.split('|')[1]);
+          const activeSession = activeGymSession() && dateKey(new Date(activeGymSession().startAt)) === key &&
+            end === new Date(activeGymSession().closesAt).getHours() * 60 + new Date(activeGymSession().closesAt).getMinutes();
           add(`${suffix}-close`, date, end, 30, activeSession ? '正在健身 · 30 分钟后时段结束' : '可健身时段还有 30 分钟', `${minutesToTime(end)} 结束`, 900);
         });
       }
@@ -675,7 +782,7 @@
     pushStatus('正在建立订阅…');
     try {
       const config = await pushRequest('/config');
-      const registration = await navigator.serviceWorker.register('./sw.js?v=17', { updateViaCache: 'none' });
+      const registration = await navigator.serviceWorker.register('./sw.js?v=18', { updateViaCache: 'none' });
       let subscription = await registration.pushManager.getSubscription();
       if (subscription) {
         const oldKey = subscription.options?.applicationServerKey;
@@ -719,6 +826,96 @@
     });
   }
 
+  const startOfWeek = (date) => {
+    const start = addDays(date, 1 - mondayIndex(date));
+    start.setHours(0, 0, 0, 0);
+    return start;
+  };
+  const sessionDuration = (session, now = Date.now()) => Math.max(0, (session.endAt ?? Math.min(now, session.closesAt)) - session.startAt);
+  const sessionInRange = (session, start, end) => session.startAt >= start.getTime() && session.startAt < end.getTime();
+  const summary = (sessions, start, end) => {
+    const filtered = sessions.filter(session => sessionInRange(session, start, end));
+    const duration = filtered.reduce((total, session) => total + sessionDuration(session), 0);
+    return { count: filtered.length, duration, average: filtered.length ? duration / filtered.length : 0 };
+  };
+  const dateTimeInput = (timestamp) => {
+    const date = new Date(timestamp);
+    return `${dateKey(date)}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  };
+
+  function renderGymView() {
+    const panel = $('gymPanel');
+    const scrollTop = panel.scrollTop;
+    const now = nowDate();
+    const sessions = gymStore.list();
+    const current = activeGymSession();
+    const completed = sessions.filter(session => session.endAt !== null).reverse();
+    const minute = now.getHours() * 60 + now.getMinutes();
+    const openNow = isInside(gymSlots(mondayIndex(now)), minute);
+    const periodStart = gymPeriod === 'month'
+      ? new Date(now.getFullYear(), now.getMonth(), 1)
+      : startOfWeek(now);
+    const periodEnd = gymPeriod === 'month'
+      ? new Date(now.getFullYear(), now.getMonth() + 1, 1)
+      : addDays(periodStart, 7);
+    const previousStart = gymPeriod === 'month'
+      ? new Date(now.getFullYear(), now.getMonth() - 1, 1)
+      : addDays(periodStart, -7);
+    const currentStats = summary(sessions, periodStart, periodEnd);
+    const previousStats = summary(sessions, previousStart, periodStart);
+    const chartFirst = sessions.length ? startOfWeek(new Date(sessions[0].startAt)) : startOfWeek(now);
+    const weeksAvailable = Math.max(1, Math.round((startOfWeek(now) - chartFirst) / 604800000) + 1);
+    const weekCount = gymChartWeeks === 0 ? weeksAvailable : gymChartWeeks;
+    const thisMonday = startOfWeek(now);
+    const chart = Array.from({ length: weekCount }, (_, index) => {
+      const start = addDays(thisMonday, (index - weekCount + 1) * 7);
+      const end = addDays(start, 7);
+      const stats = summary(sessions, start, end);
+      const value = gymChartMetric === 'count' ? stats.count
+        : Math.round((gymChartMetric === 'average' ? stats.average : stats.duration) / 60000);
+      return { label: `${start.getMonth() + 1}/${start.getDate()}`, value };
+    });
+    const max = Math.max(1, ...chart.map(item => item.value));
+    const metricUnit = gymChartMetric === 'count' ? '次' : '分钟';
+    const rows = (gymShowAll ? completed : completed.slice(0, 6)).map(session => {
+      const start = new Date(session.startAt);
+      const end = new Date(session.endAt);
+      return `<button class="gym-history-row" type="button" data-session="${escapeHtml(session.id)}">
+        <span>${fmtMD.format(start)}${session.endReason === 'closing' ? '<small>自动结束</small>' : ''}</span><span>${minutesToTime(start.getHours() * 60 + start.getMinutes())}–${minutesToTime(end.getHours() * 60 + end.getMinutes())}</span><strong>${formatDuration(sessionDuration(session))}</strong>
+      </button>`;
+    }).join('');
+    panel.innerHTML = `
+      <div class="gym-pane-head"><strong>健身记录</strong><span>独立记录实际训练</span></div>
+      <section class="gym-section gym-live">
+        <div class="gym-section-head">当前状态</div>
+        <div class="gym-live-content">
+          ${current ? `<strong class="gym-live-title">正在健身</strong><span class="gym-timer">${formatDuration(now.getTime() - current.startAt, true)}</span><span>${minutesToTime(new Date(current.startAt).getHours() * 60 + new Date(current.startAt).getMinutes())} 开始</span>`
+            : `<strong class="gym-live-title">${openNow ? '当前未训练' : '当前不在开放时段'}</strong><span>本${gymPeriod === 'week' ? '周' : '月'}已训练 ${currentStats.count} 次 · ${formatDuration(currentStats.duration)}</span>`}
+          <button type="button" class="action-button gym-action" data-gym-command="${current ? 'stop' : 'start'}" ${!current && !openNow ? 'disabled' : ''}>${current ? '结束健身' : '开始健身'}</button>
+        </div>
+      </section>
+      <section class="gym-section">
+        <div class="gym-section-head">当前周期 <div class="gym-mini-tabs"><button type="button" data-gym-period="week" class="${gymPeriod === 'week' ? 'selected' : ''}">本周</button><button type="button" data-gym-period="month" class="${gymPeriod === 'month' ? 'selected' : ''}">本月</button></div></div>
+        <div class="gym-metrics"><div><span>训练次数</span><strong>${currentStats.count} 次</strong></div><div><span>总训练时长</span><strong>${formatDuration(currentStats.duration)}</strong></div><div><span>平均每次</span><strong>${formatDuration(currentStats.average)}</strong></div></div>
+        <div class="gym-comparison">较上${gymPeriod === 'week' ? '周' : '月'}：${currentStats.count - previousStats.count >= 0 ? '+' : ''}${currentStats.count - previousStats.count} 次 · ${currentStats.duration - previousStats.duration >= 0 ? '+' : '−'}${formatDuration(Math.abs(currentStats.duration - previousStats.duration))}</div>
+      </section>
+      <section class="gym-section">
+        <div class="gym-section-head">训练趋势</div>
+        <div class="gym-chart-controls"><label>范围 <select id="gymChartWeeks"><option value="4" ${gymChartWeeks === 4 ? 'selected' : ''}>4 周</option><option value="12" ${gymChartWeeks === 12 ? 'selected' : ''}>12 周</option><option value="52" ${gymChartWeeks === 52 ? 'selected' : ''}>1 年</option><option value="0" ${gymChartWeeks === 0 ? 'selected' : ''}>全部</option></select></label><label>指标 <select id="gymChartMetric"><option value="duration" ${gymChartMetric === 'duration' ? 'selected' : ''}>总时长</option><option value="count" ${gymChartMetric === 'count' ? 'selected' : ''}>次数</option><option value="average" ${gymChartMetric === 'average' ? 'selected' : ''}>平均时长</option></select></label></div>
+        ${sessions.length ? `<div class="gym-chart-scroll"><div class="gym-chart" style="--chart-count:${weekCount}">${chart.map(item => `<div class="gym-chart-column" title="${item.label} 当周：${item.value} ${metricUnit}"><span class="gym-chart-value">${item.value}</span><div class="gym-chart-bar" style="height:${item.value ? Math.max(3, Math.round(item.value / max * 112)) : 0}px"></div><span class="gym-chart-label">${item.label}</span></div>`).join('')}</div></div>` : '<p class="gym-chart-empty">完成第一段训练后，这里会显示每周趋势。</p>'}
+        <div class="gym-chart-unit">每周${gymChartMetric === 'count' ? '训练次数' : gymChartMetric === 'average' ? '平均训练时长' : '训练总时长'} · ${metricUnit}</div>
+      </section>
+      <section class="gym-section">
+        <div class="gym-section-head">${gymShowAll ? '全部训练' : '最近训练'} <span>${completed.length} 条已完成</span></div>
+        <div class="gym-history-head"><span>日期</span><span>起止</span><span>时长</span></div>
+        ${rows || '<p class="gym-empty">还没有训练记录。</p>'}
+        ${completed.length > 6 ? `<button class="gym-more" type="button" data-gym-command="toggle-all">${gymShowAll ? '收起记录' : '查看全部'}</button>` : ''}
+      </section>
+      <div class="gym-data-actions"><button type="button" data-gym-command="export">导出记录</button><button type="button" data-gym-command="import">导入记录</button><input id="gymImportFile" type="file" accept="application/json,.json" hidden /></div>
+      <p class="gym-message" role="status">${escapeHtml(gymMessage || '记录仅保存在此设备；换机前请导出备份。')}</p>`;
+    panel.scrollTop = scrollTop;
+  }
+
   function clearAttentionBadge() {
     if ('clearAppBadge' in navigator) navigator.clearAppBadge().catch(() => {});
   }
@@ -728,12 +925,13 @@
     setupPush();
     renderAll();
     clearAttentionBadge();
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js?v=17', { updateViaCache: 'none' }).then(schedulePushSync).catch(() => {});
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js?v=18', { updateViaCache: 'none' }).then(schedulePushSync).catch(() => {});
     setInterval(() => {
       if (refreshDailyState()) { renderAll(); return; }
       renderHeader();
       if (viewMode === 'week') renderWeekView();
-      else renderDayView();
+      else if (viewMode === 'day') renderDayView();
+      else renderGymView();
     }, 60000);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) { clearAttentionBadge(); renderAll(); schedulePushSync(); } });
     window.addEventListener('focus', () => { clearAttentionBadge(); renderAll(); schedulePushSync(); });

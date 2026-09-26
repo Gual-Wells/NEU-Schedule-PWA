@@ -24,7 +24,7 @@ function node(id) {
   });
   return nodes.get(id);
 }
-const segments = ['week', 'day'].map(mode => {
+const segments = ['week', 'day', 'gym'].map(mode => {
   const element = node(`segment-${mode}`);
   element.dataset.mode = mode;
   return element;
@@ -42,7 +42,7 @@ const sandbox = {
     addEventListener(name, fn) { lifecycle.set(`document:${name}`, fn); },
     hidden: false
   },
-  localStorage: { getItem: key => store.get(key) || null, setItem: (key, value) => store.set(key, value) },
+  localStorage: { getItem: key => store.get(key) || null, setItem: (key, value) => store.set(key, value), removeItem: key => store.delete(key) },
   navigator: {},
   location: { search: '' },
   URLSearchParams,
@@ -54,7 +54,7 @@ const sandbox = {
   console
 };
 vm.createContext(sandbox);
-for (const file of ['data.js', 'app.js'])
+for (const file of ['data.js', 'gym-store.js', 'app.js'])
   vm.runInContext(fs.readFileSync(new URL(`../${file}`, import.meta.url), 'utf8'), sandbox, { filename: file });
 assert.equal(store.get('neu-schedule-skipped-v7'), '[]', 'old-day skip records must clear on startup');
 
@@ -94,7 +94,10 @@ node('dayMap').listeners.click({ target: { closest: selector => selector === '[d
 assert.match(node('courseDetailBody').innerHTML, /班级/);
 assert.match(node('courseDetailBody').innerHTML, /04班（浑南）/);
 node('skipCourseButton').listeners.click();
-assert.doesNotMatch(node('dayMap').innerHTML, /data-course="4"/);
+assert.match(node('dayMap').innerHTML, /class="map-course skipped" data-course="4"/);
+segments[0].listeners.click();
+assert.match(node('timelineGrid').innerHTML, /class="course-block [^"]*skipped"[^>]*data-course="4"/);
+segments[1].listeners.click();
 assert.match(node('dayDashboard').innerHTML, /已跳过 1 节/);
 assert.match(node('dayDashboard').innerHTML, /一键撤销全部旷课/);
 node('dayDashboard').listeners.click({ target: { closest: selector => selector === '[data-undo-all]' ? {} : null } });
@@ -103,7 +106,7 @@ assert.equal(store.get('neu-schedule-skipped-v7'), '[]');
 
 node('dayMap').listeners.click({ target: { closest: selector => selector === '[data-course]' ? { dataset: { course: '4' } } : null } });
 node('skipCourseButton').listeners.click();
-assert.doesNotMatch(node('dayMap').innerHTML, /data-course="4"/);
+assert.match(node('dayMap').innerHTML, /class="map-course skipped" data-course="4"/);
 
 node('dayDashboard').listeners.click({ target: { closest: selector => selector === '[data-undo]' ? { dataset: { undo: '4' } } : null } });
 assert.match(node('dayMap').innerHTML, /data-course="4"/);
@@ -117,6 +120,12 @@ node('prevWeek').listeners.click();
 
 node('dayDashboard').listeners.click({ target: { closest: selector => selector === '[data-action]' ? { dataset: { action: 'start-gym' } } : null } });
 assert.match(node('dayDashboard').innerHTML, /正在健身/);
+segments[2].listeners.click();
+assert.match(node('gymPanel').innerHTML, /正在健身/);
+assert.match(node('gymPanel').innerHTML, /训练趋势/);
+node('gymPanel').listeners.click({ target: { closest: selector => selector === '[data-gym-command]' ? { dataset: { gymCommand: 'stop' } } : null } });
+assert.match(store.get('neu-schedule-gym-sessions-v1'), /"endAt":/);
+segments[1].listeners.click();
 
 fixedArgs = [2026, 8, 25, 15, 45];
 tick();
@@ -129,10 +138,16 @@ fixedArgs = [2026, 8, 21, 18, 45];
 segments[0].listeners.click();
 node('monday-head').listeners.click();
 assert.match(node('dayDashboard').innerHTML, /正在上 论文规范/);
-assert.match(node('dayDashboard').innerHTML, /翘课去健身/);
-node('dayDashboard').listeners.click({ target: { closest: selector => selector === '[data-skip]' ? { dataset: { skip: '10', gym: 'yes' } } : null } });
-assert.doesNotMatch(node('dayMap').innerHTML, /data-course="10"/);
+assert.match(node('dayDashboard').innerHTML, /翘掉论文规范/);
+assert.match(node('dayDashboard').innerHTML, /data-action="start-gym"/, 'training must remain available during a course');
+node('dayDashboard').listeners.click({ target: { closest: selector => selector === '[data-action]' ? { dataset: { action: 'start-gym' } } : null } });
 assert.match(node('dayDashboard').innerHTML, /正在健身/);
+assert.match(node('dayDashboard').innerHTML, /正在上 论文写作与学术规范/);
+assert.equal(store.get('neu-schedule-skipped-v7'), '[]', 'starting training must not skip a course');
+node('dayDashboard').listeners.click({ target: { closest: selector => selector === '[data-action]' ? { dataset: { action: 'end-gym' } } : null } });
+node('dayDashboard').listeners.click({ target: { closest: selector => selector === '[data-skip]' ? { dataset: { skip: '10' } } : null } });
+assert.match(node('dayMap').innerHTML, /class="map-course skipped" data-course="10"/);
+assert.doesNotMatch(node('dayDashboard').innerHTML, /正在健身/);
 assert.match(store.get('neu-schedule-skipped-v7'), /2026-09-21:10/);
 
 fixedArgs = [2026, 8, 22, 0, 1];
@@ -140,7 +155,7 @@ tick();
 assert.equal(store.get('neu-schedule-skipped-v7'), '[]', 'midnight must clear every skip');
 assert.doesNotMatch(node('dayDashboard').innerHTML, /已跳过/);
 assert.match(node('dayDashboard').innerHTML, /周二/);
-assert.equal(store.get('neu-schedule-gym-session-v7'), '');
+assert.ok(store.get('neu-schedule-gym-sessions-v1'), 'completed gym sessions must persist after midnight');
 
 node('dayMap').listeners.click({ target: { closest: selector => selector === '[data-course]' ? { dataset: { course: '3' } } : null } });
 node('skipCourseButton').listeners.click();
