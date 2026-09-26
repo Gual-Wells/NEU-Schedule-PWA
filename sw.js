@@ -1,12 +1,12 @@
-const CACHE = 'neu-schedule-v16';
+const CACHE = 'neu-schedule-v17';
 const CORE = [
   './',
   './index.html',
-  './styles.css?v=16',
-  './data.js?v=16',
-  './push-config.js?v=16',
-  './app.js?v=16',
-  './manifest.webmanifest?v=16',
+  './styles.css?v=17',
+  './data.js?v=17',
+  './push-config.js?v=17',
+  './app.js?v=17',
+  './manifest.webmanifest?v=17',
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/apple-touch-icon.png'
@@ -26,6 +26,9 @@ self.addEventListener('push', event => {
     const url = typeof notice?.navigate === 'string' && new URL(notice.navigate, self.location.href).origin === self.location.origin
       ? notice.navigate : new URL('./', self.registration.scope).href;
     await self.registration.showNotification(title, { body, icon: './icons/icon-192.png', badge: './icons/icon-192.png', data: { url } });
+    if ('setAppBadge' in self.navigator) {
+      try { await self.navigator.setAppBadge(1); } catch (_) {}
+    }
   })());
 });
 

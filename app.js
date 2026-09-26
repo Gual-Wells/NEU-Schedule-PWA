@@ -675,7 +675,7 @@
     pushStatus('正在建立订阅…');
     try {
       const config = await pushRequest('/config');
-      const registration = await navigator.serviceWorker.register('./sw.js?v=16', { updateViaCache: 'none' });
+      const registration = await navigator.serviceWorker.register('./sw.js?v=17', { updateViaCache: 'none' });
       let subscription = await registration.pushManager.getSubscription();
       if (subscription) {
         const oldKey = subscription.options?.applicationServerKey;
@@ -719,19 +719,24 @@
     });
   }
 
+  function clearAttentionBadge() {
+    if ('clearAppBadge' in navigator) navigator.clearAppBadge().catch(() => {});
+  }
+
   function boot() {
     setupInteractions();
     setupPush();
     renderAll();
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js?v=16', { updateViaCache: 'none' }).then(schedulePushSync).catch(() => {});
+    clearAttentionBadge();
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js?v=17', { updateViaCache: 'none' }).then(schedulePushSync).catch(() => {});
     setInterval(() => {
       if (refreshDailyState()) { renderAll(); return; }
       renderHeader();
       if (viewMode === 'week') renderWeekView();
       else renderDayView();
     }, 60000);
-    document.addEventListener('visibilitychange', () => { if (!document.hidden) { renderAll(); schedulePushSync(); } });
-    window.addEventListener('focus', () => { renderAll(); schedulePushSync(); });
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) { clearAttentionBadge(); renderAll(); schedulePushSync(); } });
+    window.addEventListener('focus', () => { clearAttentionBadge(); renderAll(); schedulePushSync(); });
   }
 
   boot();
