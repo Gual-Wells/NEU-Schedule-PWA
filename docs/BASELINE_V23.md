@@ -16,7 +16,7 @@
 ## 基线范围与核验
 
 - 基线提交包含页面、课程和开放表的种子迁移、Worker、网关、测试及 GitHub Pages 旧址的 404 页面。课程和开放表运行时从 D1 读取；提交固定的是应用代码与种子数据，**不会冻结之后 D1 的实时内容、会话、训练记录、订阅或 Cron 队列**。
-- 建立分支时 `main` 与 `codex/v23-baseline` 均指向上述 SHA；正式入口返回 HTTP 200，线上 `sw.js` 首行是 `neu-schedule-v23`。这能确认部署资源版本，不能单凭首行证明线上全部资源与该提交逐字节一致。
+- 建立分支时 `main` 与 `codex/v23-baseline` 均指向上述 SHA；正式入口返回 HTTP 200，线上 `sw.js` 首行是 `neu-schedule-v23`。对 9 个静态文本文件及 3 个图标逐一比对后，图标和 5 个文本文件与基线逐字节相同，另 4 个文本文件（`index.html`、`app.js`、`sw.js`、`manifest.webmanifest`）仅 CRLF/LF 换行符不同，规范化换行后内容相同。此检查不覆盖 Worker 运行代码或 D1 实时数据。
 - GitHub Pages 已停用应用入口，其工作流只发布 `legacy-404.html` 为 404 页面。正式 PWA 入口是 Cloudflare Pages。
 - 该基线已通过仓库静态验证与本地认证/Worker 验证。此前在 iPhone 主屏幕版收到测试推送；v23 的登录聚焦和标签回跳修复还需要设备上的实际操作回归，静态模拟不能替代 iOS 触摸、键盘和 PWA 生命周期检查。
 
