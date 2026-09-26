@@ -40,7 +40,7 @@ jobs:
       - name: Prepare public files
         run: |
           mkdir public
-          cp legacy-redirect.html public/index.html
+          cp legacy-404.html public/404.html
           cp .nojekyll public/
       - name: Setup Pages
         uses: actions/configure-pages@v5
