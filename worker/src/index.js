@@ -5,6 +5,7 @@ const encoder = new TextEncoder();
 const MAX_JOBS = 1800;
 const MAX_BODY = 180_000;
 const DAY = 86_400_000;
+const TEST_COOLDOWN = 10_000;
 
 function json(value, status = 200, extra = {}) {
   return new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', ...extra } });
@@ -199,11 +200,23 @@ async function route(request, env) {
 
   if (url.pathname === '/test') {
     const now = Date.now();
-    if (device.test_at && now - device.test_at < 60000) return json({ error: '请稍后再试' }, 429);
-    await env.DB.prepare('UPDATE devices SET test_at = ? WHERE id = ?').bind(now, device.id).run();
-    const delivered = await send(device, '课表提醒测试', '后台推送已连接。', 300, env);
+    const claim = await env.DB.prepare('UPDATE devices SET test_at = ? WHERE id = ? AND (test_at IS NULL OR test_at <= ?)')
+      .bind(now, device.id, now - TEST_COOLDOWN).run();
+    if (!claim.meta.changes) {
+      const current = await env.DB.prepare('SELECT test_at FROM devices WHERE id = ?').bind(device.id).first();
+      const retryAfterSeconds = Math.max(1, Math.ceil(((current?.test_at || now) + TEST_COOLDOWN - now) / 1000));
+      return json({ error: `发送过于频繁，请等待 ${retryAfterSeconds} 秒`, retryAfterSeconds }, 429, { 'retry-after': String(retryAfterSeconds) });
+    }
+    let delivered;
+    try {
+      delivered = await send(device, '课表提醒测试', '后台推送已连接。', 300, env);
+    } catch (error) {
+      await env.DB.prepare('UPDATE devices SET test_at = NULL WHERE id = ? AND test_at = ?').bind(device.id, now).run();
+      console.error('Test push delivery failed', { status: error.statusCode || null, message: error.message || String(error) });
+      return json({ error: '推送服务暂时失败，请重试' }, 502);
+    }
     if (!delivered) { await env.DB.prepare('DELETE FROM devices WHERE id = ?').bind(device.id).run(); return json({ error: '订阅已失效，请重新开启' }, 410); }
-    return json({ ok: true });
+    return json({ ok: true, retryAfterSeconds: TEST_COOLDOWN / 1000 });
   }
 
   if (url.pathname === '/disable') {

@@ -65,3 +65,61 @@ test('Web Push payload is encrypted and signed before sending', async () => {
     assert.equal(requests, 1);
   } finally { globalThis.fetch = previousFetch; }
 });
+
+test('test push reports cooldown and a failed delivery does not lock future tests', async () => {
+  const vapid = { ...await generateVapidKeys(), subject: 'mailto:test@example.com' };
+  const pair = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']);
+  const encode = bytes => Buffer.from(bytes).toString('base64url');
+  const device = {
+    id: 'device-1', endpoint: 'https://web.push.apple.com/synthetic',
+    p256dh: encode(new Uint8Array(await crypto.subtle.exportKey('raw', pair.publicKey))),
+    auth: encode(crypto.getRandomValues(new Uint8Array(16))), test_at: null
+  };
+  const db = {
+    prepare(sql) {
+      let args;
+      return {
+        bind(...values) { args = values; return this; },
+        async first() {
+          if (sql.includes('FROM auth_sessions')) return { token_hash: 'session' };
+          if (sql.includes('SELECT * FROM devices')) return device;
+          if (sql.includes('SELECT test_at FROM devices')) return { test_at: device.test_at };
+          throw new Error(`Unexpected query: ${sql}`);
+        },
+        async run() {
+          if (sql.includes('SET test_at = ?')) {
+            if (device.test_at !== null && device.test_at > args[2]) return { meta: { changes: 0 } };
+            device.test_at = args[0];
+            return { meta: { changes: 1 } };
+          }
+          if (sql.includes('SET test_at = NULL')) {
+            if (device.test_at === args[1]) device.test_at = null;
+            return { meta: { changes: 1 } };
+          }
+          throw new Error(`Unexpected update: ${sql}`);
+        }
+      };
+    }
+  };
+  const request = () => new Request('https://worker.test/test', {
+    method: 'POST',
+    headers: { origin: env.APP_ORIGIN, cookie: `__Host-neu_session=${'s'.repeat(43)}`, authorization: `Bearer ${'t'.repeat(43)}`, 'content-type': 'application/json' },
+    body: '{}'
+  });
+  const previousFetch = globalThis.fetch;
+  let providerStatus = 201;
+  globalThis.fetch = async () => new Response(null, { status: providerStatus });
+  const testEnv = { ...env, DB: db, VAPID_PUBLIC_KEY: vapid.publicKey, VAPID_PRIVATE_KEY: vapid.privateKey, VAPID_SUBJECT: vapid.subject };
+  try {
+    assert.equal((await worker.fetch(request(), testEnv)).status, 200);
+    const limited = await worker.fetch(request(), testEnv);
+    assert.equal(limited.status, 429);
+    assert.match((await limited.json()).error, /等待 \d+ 秒/);
+    device.test_at = Date.now() - 10_001;
+    providerStatus = 503;
+    assert.equal((await worker.fetch(request(), testEnv)).status, 502);
+    assert.equal(device.test_at, null);
+    providerStatus = 201;
+    assert.equal((await worker.fetch(request(), testEnv)).status, 200);
+  } finally { globalThis.fetch = previousFetch; }
+});

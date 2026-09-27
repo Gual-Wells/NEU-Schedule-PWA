@@ -705,8 +705,22 @@
 
   const pushBase = () => String(window.PUSH_API_BASE || '').replace(/\/$/, '');
   let pushSyncTimer = null;
+  let testCooldownUntil = 0;
+  let testCooldownTimer = null;
   const pushToken = () => readStorage('neu-schedule-push-token-v1');
   function pushStatus(message) { $('pushStatus').textContent = message; }
+  function testCooldown(seconds, message) {
+    testCooldownUntil = Date.now() + Math.max(0, seconds) * 1000;
+    clearInterval(testCooldownTimer);
+    const update = () => {
+      const remaining = Math.max(0, Math.ceil((testCooldownUntil - Date.now()) / 1000));
+      $('testPush').disabled = remaining > 0;
+      pushStatus(remaining ? `${message} ${remaining} 秒后可再试。` : '现在可以再次发送测试。');
+      if (!remaining) clearInterval(testCooldownTimer);
+    };
+    update();
+    if (seconds > 0) testCooldownTimer = setInterval(update, 1000);
+  }
   async function pushRequest(path, body, token) {
     const response = await fetch(`${pushBase()}${path}`, {
       method: body === undefined ? 'GET' : 'POST',
@@ -715,7 +729,11 @@
       cache: 'no-store'
     });
     const result = await response.json();
-    if (!response.ok) throw new Error(result.error || `请求失败 (${response.status})`);
+    if (!response.ok) {
+      const error = new Error(result.error || `请求失败 (${response.status})`);
+      error.retryAfterSeconds = result.retryAfterSeconds;
+      throw error;
+    }
     return result;
   }
   function b64ToBytes(value) {
@@ -790,7 +808,7 @@
     pushStatus('正在建立订阅…');
     try {
       const config = await pushRequest('/config');
-      const registration = await navigator.serviceWorker.register('./sw.js?v=23', { updateViaCache: 'none' });
+      const registration = await navigator.serviceWorker.register('./sw.js?v=24', { updateViaCache: 'none' });
       let subscription = await registration.pushManager.getSubscription();
       if (subscription) {
         const oldKey = subscription.options?.applicationServerKey;
@@ -829,8 +847,17 @@
     $('disablePush').addEventListener('click', disablePush);
     $('testPush').addEventListener('click', async () => {
       if (!pushToken()) { pushStatus('请先开启后台提醒。'); return; }
-      try { await pushRequest('/test', {}, pushToken()); pushStatus('测试通知已发出，请查看系统通知。'); }
-      catch (error) { pushStatus(`测试失败：${error.message}`); }
+      const button = $('testPush');
+      if (button.disabled) return;
+      button.disabled = true;
+      pushStatus('正在发送测试…');
+      try {
+        const result = await pushRequest('/test', {}, pushToken());
+        testCooldown(result.retryAfterSeconds || 10, '测试推送已提交，请查看系统通知。');
+      } catch (error) {
+        if (error.retryAfterSeconds) testCooldown(error.retryAfterSeconds, '发送过于频繁。');
+        else { button.disabled = false; pushStatus(`测试失败：${error.message}`); }
+      }
     });
   }
 
@@ -978,7 +1005,7 @@
     renderAll();
     initCloud();
     clearAttentionBadge();
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js?v=23', { updateViaCache: 'none' }).then(schedulePushSync).catch(() => {});
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js?v=24', { updateViaCache: 'none' }).then(schedulePushSync).catch(() => {});
     setInterval(() => {
       if (refreshDailyState()) { renderAll(); return; }
       renderHeader();
