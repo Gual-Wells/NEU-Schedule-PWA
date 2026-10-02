@@ -81,6 +81,12 @@
     course._weekSet = expandWeeks(course.weeks);
     course._color = stableColor(course.name);
   });
+  const gymClosures = (D.gym.closures || []).map(item => ({
+    ...item,
+    _weekSet: expandWeeks(item.weeks),
+    _start: timeToMinutes(item.start),
+    _end: timeToMinutes(item.end)
+  }));
 
   function weekFromDate(d) {
     const w1 = parseLocalDate(D.semester.week1Monday);
@@ -119,18 +125,7 @@
     return null;
   }
 
-  function gymSlots(day) {
-    return (D.gym.availability[day] || []).map(([start, end]) => [timeToMinutes(start), timeToMinutes(end)]);
-  }
-  const isInside = (intervals, minute) => intervals.some(([start, end]) => start <= minute && minute < end);
-
-  function dayFreeWindows(day, week) {
-    let intervals = gymSlots(day).map(([start, end]) => [start, end]);
-    const occupied = activeCourses(day, week).map(course => {
-      const time = periodTime(course);
-      return [timeToMinutes(time.start), timeToMinutes(time.end)];
-    });
-
+  function subtractIntervals(intervals, occupied) {
     for (const [occupiedStart, occupiedEnd] of occupied) {
       const next = [];
       for (const [start, end] of intervals) {
@@ -144,6 +139,21 @@
       intervals = next.filter(([start, end]) => end > start);
     }
     return intervals;
+  }
+  function gymSlots(day, week) {
+    const base = (D.gym.availability[day] || []).map(([start, end]) => [timeToMinutes(start), timeToMinutes(end)]);
+    const occupied = gymClosures.filter(item => item.weekday === day && item._weekSet.has(week))
+      .map(item => [item._start, item._end]);
+    return subtractIntervals(base, occupied);
+  }
+  const isInside = (intervals, minute) => intervals.some(([start, end]) => start <= minute && minute < end);
+
+  function dayFreeWindows(day, week) {
+    const occupied = activeCourses(day, week).map(course => {
+      const time = periodTime(course);
+      return [timeToMinutes(time.start), timeToMinutes(time.end)];
+    });
+    return subtractIntervals(gymSlots(day, week), occupied);
   }
 
   function shortCourseName(name, span) {
@@ -164,7 +174,6 @@
   const periodStarts = Object.values(D.periods).map(([start]) => timeToMinutes(start));
   const periodEnds = Object.values(D.periods).map(([, end]) => timeToMinutes(end));
   const academicBoundaries = new Set([...periodStarts, ...periodEnds]);
-  const gymBoundaries = [...new Set(Object.values(D.gym.availability).flatMap(slots => slots.flat()).map(timeToMinutes))].sort((a, b) => a - b);
 
   let selectedWeek = currentWeek();
   let selectedDay = mondayIndex(nowDate());
@@ -237,6 +246,7 @@
     const weekMonday = weekStart(selectedWeek);
     const now = nowDate();
     const todayKey = dateKey(now);
+    const gymBoundaries = [...new Set(Array.from({ length: 7 }, (_, index) => gymSlots(index + 1, selectedWeek).flat()).flat())].sort((a, b) => a - b);
     const pieces = ['<div class="corner-head"><span>节次·时间</span></div>'];
 
     for (let day = 1; day <= 7; day++) {
@@ -263,7 +273,7 @@
     for (let day = 1; day <= 7; day++) {
       pieces.push(`<div class="day-lane ${gymVersion(day, selectedWeek)} ${day === selectedDay ? 'selected-col' : ''}" style="grid-column:${day + 1};grid-row:2" data-day="${day}">`);
 
-      for (const [start, end] of gymSlots(day)) {
+      for (const [start, end] of gymSlots(day, selectedWeek)) {
         pieces.push(`<div class="gym-band" style="top:${pct(start)}%;height:${pct(end) - pct(start)}%"></div>`);
       }
 
@@ -274,7 +284,7 @@
         pieces.push(`<div class="period-guide minor" style="top:${pct(end)}%"></div>`);
       }
 
-      const localGymBoundaries = [...new Set(gymSlots(day).flat())].sort((a, b) => a - b);
+      const localGymBoundaries = [...new Set(gymSlots(day, selectedWeek).flat())].sort((a, b) => a - b);
       for (const boundary of localGymBoundaries) {
         const aligned = academicBoundaries.has(boundary);
         pieces.push(`<div class="gym-guide ${aligned ? 'aligned' : 'aux'}" style="top:${pct(boundary)}%"></div>`);
@@ -375,7 +385,7 @@
   function startGymSession() {
     const now = nowDate();
     const minute = now.getHours() * 60 + now.getMinutes();
-    const slot = gymSlots(mondayIndex(now)).find(([start, end]) => start <= minute && minute < end);
+    const slot = gymSlots(mondayIndex(now), weekFromDate(now)).find(([start, end]) => start <= minute && minute < end);
     if (!slot) { gymMessage = '现在不在健身房开放时段。'; return; }
     try {
       const closesAt = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, slot[1]).getTime();
@@ -411,7 +421,7 @@
     const now = nowDate();
     const live = dateKey(date) === dateKey(now);
     const minute = now.getHours() * 60 + now.getMinutes();
-    const open = gymSlots(selectedDay);
+    const open = gymSlots(selectedDay, selectedWeek);
     const free = dayFreeWindows(selectedDay, selectedWeek);
     if (!live) return { live, minute, title: '查看这一天', subtitle: '课程与健身房按真实时间排列', notices: [], actions: '' };
     const ongoing = courses.find(course => {
@@ -493,7 +503,7 @@
     }
     parts.push('</div>');
     parts.push(`<div class="map-track ${gymVersion(selectedDay, selectedWeek)}">`);
-    for (const [start, end] of gymSlots(selectedDay)) {
+    for (const [start, end] of gymSlots(selectedDay, selectedWeek)) {
       parts.push(`<div class="gym-band" style="top:${pct(start)}%;height:${pct(end) - pct(start)}%"></div>`);
       parts.push(`<div class="map-gym-edge" style="top:${pct(start)}%">健身 ${minutesToTime(start)}开始</div><div class="map-gym-edge end" style="top:${pct(end)}%">${minutesToTime(end)}结束</div>`);
     }
@@ -941,7 +951,7 @@
     pushStatus('正在建立订阅…');
     try {
       const config = await pushRequest('/config');
-      const registration = await navigator.serviceWorker.register('./sw.js?v=25', { updateViaCache: 'none' });
+      const registration = await navigator.serviceWorker.register('./sw.js?v=26', { updateViaCache: 'none' });
       let subscription = await registration.pushManager.getSubscription();
       if (subscription) {
         const oldKey = subscription.options?.applicationServerKey;
@@ -1019,7 +1029,7 @@
     const current = activeGymSession();
     const completed = sessions.filter(session => session.endAt !== null).reverse();
     const minute = now.getHours() * 60 + now.getMinutes();
-    const openNow = isInside(gymSlots(mondayIndex(now)), minute);
+    const openNow = isInside(gymSlots(mondayIndex(now), weekFromDate(now)), minute);
     const periodStart = gymPeriod === 'month'
       ? new Date(now.getFullYear(), now.getMonth(), 1)
       : startOfWeek(now);
@@ -1140,7 +1150,7 @@
     renderAll();
     initCloud();
     clearAttentionBadge();
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js?v=25', { updateViaCache: 'none' }).then(schedulePushSync).catch(() => {});
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js?v=26', { updateViaCache: 'none' }).then(schedulePushSync).catch(() => {});
     setInterval(() => {
       if (refreshDailyState()) { renderAll(); return; }
       renderHeader();

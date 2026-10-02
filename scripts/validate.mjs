@@ -23,7 +23,11 @@ assert(JSON.stringify(D.courses.map(c => c.className)) === JSON.stringify([
   '02班（浑南）', '', '', '04班（浑南）', '04班（浑南）', '05班（浑南）',
   '04班（浑南）', '03班（浑南）', '03班（浑南）', '07班', '', ''
 ]), 'course class names must match the supplied enrollment timetable');
-assert(JSON.stringify(D.gym.availability[5]) === JSON.stringify([['07:00','10:00'],['12:10','13:50'],['17:40','20:40']]), 'Friday gym schedule drifted');
+for (const day of [2, 4, 5]) {
+  assert(JSON.stringify(D.gym.availability[day]) === JSON.stringify([['07:00','10:00'],['12:10','13:50'],['15:40','20:40']]), `Day ${day} gym schedule drifted`);
+}
 assert(JSON.stringify(D.gym.availability[3]) === JSON.stringify([['07:00','20:40']]), 'Wednesday gym schedule drifted');
+assert(JSON.stringify(D.gym.availability[7]) === JSON.stringify([['07:00','20:40']]), 'Sunday gym opening hours drifted');
+assert(JSON.stringify(D.gym.closures) === JSON.stringify([{ weekday: 7, weeks: '4-9', start: '15:30', end: '17:00', reason: '场地课程' }]), 'Sunday gym class closure drifted');
 
 console.log('Static data invariants OK');

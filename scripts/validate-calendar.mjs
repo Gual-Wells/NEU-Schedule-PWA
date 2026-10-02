@@ -13,7 +13,7 @@ for (const id of ['calendarDialog', 'holidayStart', 'holidayEnd', 'makeupTarget'
 assert(sw.includes("'/calendar'"), 'calendar API must bypass the service worker cache');
 const appSource = original.replace(/  boot\(\);\s*\}\)\(\);\s*$/, '  window.__test = { rawCourses, activeCourses, dayFreeWindows, buildPushJobs };\n})();');
 assert.notEqual(appSource, original, 'test hook must replace boot');
-const at = new Date(2026, 8, 6, 10, 0);
+const at = new Date(2026, 8, 5, 10, 0);
 class FixedDate extends Date {
   constructor(...args) { super(...(args.length ? args : [at.getTime()])); }
   static now() { return at.getTime(); }
@@ -28,19 +28,19 @@ function model(calendar, skip = []) {
   return window.__test;
 }
 const originalModel = model({ holidays: [], makeups: [] });
-const moved = model({ holidays: ['2026-09-08'], makeups: [{ target: '2026-09-06', source: '2026-09-07' }] });
+const moved = model({ holidays: ['2026-09-08'], makeups: [{ target: '2026-09-05', source: '2026-09-07' }] });
 const source = originalModel.rawCourses(1, 2);
 assert(source.length > 0, 'source day must have lessons');
-assert.equal(originalModel.rawCourses(7, 1).length, 0, 'target must start blank');
+assert.equal(originalModel.rawCourses(6, 1).length, 0, 'target must start blank');
 assert.equal(moved.rawCourses(1, 2).length, 0, 'source day must clear');
-assert.deepEqual([...moved.rawCourses(7, 1)].map(c => c._id), [...source].map(c => c._id), 'target receives source lessons');
+assert.deepEqual([...moved.rawCourses(6, 1)].map(c => c._id), [...source].map(c => c._id), 'target receives source lessons');
 assert.equal(moved.rawCourses(2, 2).length, 0, 'holiday cancels all lessons');
 const jobs = moved.buildPushJobs();
-assert(jobs.some(job => job.id.startsWith('2026-09-06-c')), 'moved lessons receive target-day reminders');
+assert(jobs.some(job => job.id.startsWith('2026-09-05-c')), 'moved lessons receive target-day reminders');
 assert(!jobs.some(job => job.id.startsWith('2026-09-07-c')), 'source-day reminders clear');
 assert(!jobs.some(job => job.id.startsWith('2026-09-08-c')), 'holiday reminders clear');
-assert(moved.dayFreeWindows(7, 1).length < originalModel.dayFreeWindows(7, 1).length ||
-  JSON.stringify(moved.dayFreeWindows(7, 1)) !== JSON.stringify(originalModel.dayFreeWindows(7, 1)), 'moved lessons change gym free windows');
-const skipped = model({ holidays: [], makeups: [{ target: '2026-09-06', source: '2026-09-07' }] }, ['2026-09-06:10']);
-assert(skipped.activeCourses(7, 1).length < skipped.rawCourses(7, 1).length, 'today skip follows the moved date');
+assert(moved.dayFreeWindows(6, 1).length < originalModel.dayFreeWindows(6, 1).length ||
+  JSON.stringify(moved.dayFreeWindows(6, 1)) !== JSON.stringify(originalModel.dayFreeWindows(6, 1)), 'moved lessons change gym free windows');
+const skipped = model({ holidays: [], makeups: [{ target: '2026-09-05', source: '2026-09-07' }] }, ['2026-09-05:10']);
+assert(skipped.activeCourses(6, 1).length < skipped.rawCourses(6, 1).length, 'today skip follows the moved date');
 console.log('Calendar overrides affect timetable, free gym windows, skips and push jobs');
