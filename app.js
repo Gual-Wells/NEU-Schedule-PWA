@@ -41,7 +41,7 @@
     return ordinal % 2 ? 'gym-odd' : 'gym-even';
   };
   const skipKey = (date, course) => `${dateKey(date)}:${course._id}`;
-  const courseDate = (course, week) => addDays(weekStart(week), course.weekday - 1);
+  let calendar = window.APP_CALENDAR || { holidays: [], makeups: [], revision: 1 };
   let skipped;
   try { skipped = new Set(JSON.parse(localStorage.getItem('neu-schedule-skipped-v7') || '[]')); }
   catch (_) { skipped = new Set(); }
@@ -92,14 +92,31 @@
   const weekStart = (week) => addDays(parseLocalDate(D.semester.week1Monday), (week - 1) * 7);
   const periodTime = (course) => ({ start: D.periods[course.start][0], end: D.periods[course.end][1] });
 
-  function rawCourses(day, week) {
+  function baseCourses(day, week) {
     return D.courses
       .filter(course => course.weekday === day && course._weekSet.has(week))
       .sort((a, b) => a.start - b.start || a.end - b.end);
   }
-  const isSkipped = (course, week) => skipped.has(skipKey(courseDate(course, week), course));
+  function rawCourses(day, week) {
+    const key = dateKey(addDays(weekStart(week), day - 1));
+    if (calendar.holidays.includes(key)) return [];
+    const makeup = calendar.makeups.find(item => item.target === key);
+    if (makeup) {
+      const source = parseLocalDate(makeup.source);
+      return baseCourses(mondayIndex(source), weekFromDate(source));
+    }
+    if (calendar.makeups.some(item => item.source === key)) return [];
+    return baseCourses(day, week);
+  }
+  const isSkipped = (course, day, week) => skipped.has(skipKey(addDays(weekStart(week), day - 1), course));
   function activeCourses(day, week) {
-    return rawCourses(day, week).filter(course => !isSkipped(course, week));
+    return rawCourses(day, week).filter(course => !isSkipped(course, day, week));
+  }
+  function dayMark(key) {
+    if (calendar.holidays.includes(key)) return { kind: 'holiday', label: '休' };
+    if (calendar.makeups.some(item => item.target === key)) return { kind: 'makeup', label: '补' };
+    if (calendar.makeups.some(item => item.source === key)) return { kind: 'moved', label: '调' };
+    return null;
   }
 
   function gymSlots(day) {
@@ -184,7 +201,8 @@
       const day = i + 1;
       const date = addDays(start, i);
       const hasClass = rawCourses(day, selectedWeek).length > 0;
-      return `<button class="day-chip ${day === selectedDay ? 'selected' : ''} ${dateKey(date) === todayKey ? 'today' : ''} ${hasClass ? 'has-class' : ''}" data-day="${day}" type="button">
+      const mark = dayMark(dateKey(date));
+      return `<button class="day-chip ${day === selectedDay ? 'selected' : ''} ${dateKey(date) === todayKey ? 'today' : ''} ${hasClass ? 'has-class' : ''}" data-day="${day}" data-mark="${mark?.label || ''}" data-kind="${mark?.kind || ''}" type="button">
         <span class="dow">周${weekdayNames[day]}</span>
         <span class="dom">${date.getDate()}</span>
       </button>`;
@@ -223,7 +241,8 @@
 
     for (let day = 1; day <= 7; day++) {
       const date = addDays(weekMonday, day - 1);
-      pieces.push(`<button class="day-head ${day === selectedDay ? 'selected' : ''} ${dateKey(date) === todayKey ? 'today' : ''}" style="grid-column:${day + 1};grid-row:1" data-day="${day}" type="button">
+      const mark = dayMark(dateKey(date));
+      pieces.push(`<button class="day-head ${day === selectedDay ? 'selected' : ''} ${dateKey(date) === todayKey ? 'today' : ''}" style="grid-column:${day + 1};grid-row:1" data-day="${day}" data-mark="${mark?.label || ''}" data-kind="${mark?.kind || ''}" type="button">
         <strong>周${weekdayNames[day]}</strong><span>${date.getMonth() + 1}/${date.getDate()}</span>
       </button>`);
     }
@@ -266,8 +285,8 @@
         const start = timeToMinutes(time.start);
         const end = timeToMinutes(time.end);
         const duration = end - start;
-        const skippedToday = isSkipped(course, selectedWeek);
-        pieces.push(`<button class="course-block ${duration < 95 ? 'compact' : ''} ${skippedToday ? 'skipped' : ''}" type="button" data-course="${course._id}" style="top:${pct(start)}%;height:${pct(end) - pct(start)}%;--course-color:${course._color}">
+        const skippedToday = isSkipped(course, day, selectedWeek);
+        pieces.push(`<button class="course-block ${duration < 95 ? 'compact' : ''} ${skippedToday ? 'skipped' : ''}" type="button" data-course="${course._id}" data-day="${day}" style="top:${pct(start)}%;height:${pct(end) - pct(start)}%;--course-color:${course._color}">
           <span class="course-title">${escapeHtml(shortCourseName(course.name, course.end - course.start + 1))}</span>
           <span class="course-period">第${course.start}–${course.end}节</span>
           <span class="course-time">${time.start}–${time.end}</span>
@@ -303,7 +322,7 @@
     $('timelineGrid').querySelectorAll('.course-block').forEach(button => {
       button.addEventListener('click', event => {
         event.stopPropagation();
-        openCourse(Number(button.dataset.course));
+        openCourse(Number(button.dataset.course), Number(button.dataset.day));
       });
     });
 
@@ -350,7 +369,9 @@
     }
     return changedDay;
   }
-  const canSkipCourse = (course) => Boolean(course && course._weekSet.has(selectedWeek) && dateKey(courseDate(course, selectedWeek)) === dateKey(nowDate()));
+  const canSkipCourse = (course, day = selectedDay) => Boolean(course &&
+    dateKey(addDays(weekStart(selectedWeek), day - 1)) === dateKey(nowDate()) &&
+    rawCourses(day, selectedWeek).some(item => item._id === course._id));
   function startGymSession() {
     const now = nowDate();
     const minute = now.getHours() * 60 + now.getMinutes();
@@ -370,18 +391,18 @@
       schedulePushSync();
     } catch (error) { gymMessage = `结束失败：${error.message}`; }
   }
-  function skipCourse(course) {
+  function skipCourse(course, day = selectedDay) {
     refreshDailyState();
-    if (!canSkipCourse(course)) return false;
-    skipped.add(skipKey(courseDate(course, selectedWeek), course));
+    if (!canSkipCourse(course, day)) return false;
+    skipped.add(skipKey(addDays(weekStart(selectedWeek), day - 1), course));
     persistSkipped();
     renderAll();
     return true;
   }
-  function restoreCourse(course) {
+  function restoreCourse(course, day = selectedDay) {
     refreshDailyState();
-    if (!canSkipCourse(course)) return false;
-    skipped.delete(skipKey(courseDate(course, selectedWeek), course));
+    if (!canSkipCourse(course, day)) return false;
+    skipped.delete(skipKey(addDays(weekStart(selectedWeek), day - 1), course));
     persistSkipped();
     renderAll();
     return true;
@@ -441,15 +462,22 @@
   }
   function renderDayView() {
     const date = selectedDate();
+    const key = dateKey(date);
+    const mark = dayMark(key);
+    const makeup = calendar.makeups.find(item => item.target === key || item.source === key);
+    const calendarNote = mark?.kind === 'holiday' ? '放假 · 当日课程取消' :
+      mark?.kind === 'makeup' ? `补课 · 调自 ${makeup.source}` :
+      mark?.kind === 'moved' ? `课程已调至 ${makeup.target}` : '可为本学期日期设置放假或调休';
     const courses = rawCourses(selectedDay, selectedWeek);
-    const skippedCourses = courses.filter(course => isSkipped(course, selectedWeek));
-    const state = dayState(date, courses.filter(course => !isSkipped(course, selectedWeek)), skippedCourses);
+    const skippedCourses = courses.filter(course => isSkipped(course, selectedDay, selectedWeek));
+    const state = dayState(date, courses.filter(course => !isSkipped(course, selectedDay, selectedWeek)), skippedCourses);
     const now = nowDate();
     const hourAngle = (now.getHours() % 12 + now.getMinutes() / 60) * 30;
     const minuteAngle = now.getMinutes() * 6;
     const skipCount = rawCourses(selectedDay, selectedWeek).filter(course => skipped.has(skipKey(date, course))).length;
     $('dayDashboard').innerHTML = `
       <div class="dashboard-date"><strong>${weekdayLong[selectedDay]} · ${fmtMD.format(date)}</strong><span>第 ${selectedWeek} 周 · ${courses.length} 段课程${skippedCourses.length ? ` · 已翘 ${skippedCourses.length}` : ''}</span></div>
+      <div class="calendar-bar"><span>${escapeHtml(calendarNote)}</span><button type="button" data-calendar-open>放假／调休</button></div>
       <div class="now-row">
         <div class="clock" aria-label="当前时间 ${minutesToTime(now.getHours() * 60 + now.getMinutes())}"><i class="hand hour" style="--rotation:${hourAngle}deg"></i><i class="hand minute" style="--rotation:${minuteAngle}deg"></i><i class="clock-center"></i></div>
         <div class="now-text"><span class="clock-digital">${minutesToTime(now.getHours() * 60 + now.getMinutes())}</span><h2>${escapeHtml(state.title)}</h2><p>${escapeHtml(state.subtitle)}</p></div>
@@ -475,7 +503,7 @@
     for (const course of courses) {
       const t = periodTime(course);
       const start = timeToMinutes(t.start), end = timeToMinutes(t.end);
-      const skippedToday = isSkipped(course, selectedWeek);
+      const skippedToday = isSkipped(course, selectedDay, selectedWeek);
       parts.push(`<button type="button" class="map-course ${skippedToday ? 'skipped' : ''}" data-course="${course._id}" style="top:${pct(start)}%;height:${pct(end) - pct(start)}%;--course-color:${course._color}">
         <strong>${escapeHtml(course.name)}${skippedToday ? ' · 已翘' : ''}</strong><span>第${course.start}–${course.end}节 · ${t.start}–${t.end}</span><span>${escapeHtml(course.location)}${course.className ? ` · ${escapeHtml(course.className)}` : ''}${course.note ? ` · ${escapeHtml(course.note)}` : ''}</span>
       </button>`);
@@ -493,28 +521,132 @@
     });
   }
 
-  function openCourse(id) {
+  function openCourse(id, day = selectedDay) {
     const course = D.courses.find(item => item._id === id);
     if (!course) return;
     const time = periodTime(course);
+    const makeup = calendar.makeups.find(item => item.target === dateKey(addDays(weekStart(selectedWeek), day - 1)));
     $('courseDetailTitle').textContent = course.name;
     $('courseDetailBody').innerHTML = [
-      detail('时间', `${weekdayLong[course.weekday]} ${time.start}–${time.end} · ${course.start}-${course.end}节`),
+      detail('时间', `${weekdayLong[day]} ${time.start}–${time.end} · ${course.start}-${course.end}节`),
+      ...(makeup ? [detail('调休来源', makeup.source)] : []),
       detail('地点', course.location),
       detail('教师', course.teacher),
-      detail('周数', `第 ${course.weeks} 周`),
+      detail(makeup ? '原排课周数' : '周数', `第 ${course.weeks} 周`),
       ...(course.className ? [detail('班级', course.className, true)] : []),
       ...(course.note ? [detail('备注', course.note, true)] : [])
     ].join('');
     $('skipCourseButton').dataset.course = String(id);
-    const canSkip = canSkipCourse(course);
+    $('skipCourseButton').dataset.day = String(day);
+    const canSkip = canSkipCourse(course, day);
     $('skipCourseButton').disabled = !canSkip;
-    $('skipCourseButton').textContent = canSkip ? isSkipped(course, selectedWeek) ? '恢复这节课' : '翘掉这节课' : '只能标记今天的课';
+    $('skipCourseButton').textContent = canSkip ? isSkipped(course, day, selectedWeek) ? '恢复这节课' : '翘掉这节课' : '只能标记今天的课';
     $('courseDialog').showModal();
   }
 
   function detail(label, value, full = false) {
     return `<div class="detail-item ${full ? 'full' : ''}"><span>${label}</span><strong>${escapeHtml(value)}</strong></div>`;
+  }
+
+  let calendarSaving = false;
+  function calendarBounds() {
+    return { min: D.semester.week1Monday, max: dateKey(addDays(weekStart(D.semester.totalWeeks), 6)) };
+  }
+  function validCalendarDate(key) {
+    const { min, max } = calendarBounds();
+    return /^\d{4}-\d{2}-\d{2}$/.test(key) && dateKey(parseLocalDate(key)) === key && key >= min && key <= max;
+  }
+  function renderCalendarRecords() {
+    const holidays = calendar.holidays.map(key => `<div class="calendar-record"><span><b>休</b> ${key}</span><button type="button" data-remove-holiday="${key}">撤销</button></div>`);
+    const makeups = calendar.makeups.map(item => `<div class="calendar-record"><span><b>补</b> ${item.target} ← ${item.source}</span><button type="button" data-remove-makeup="${item.target}">撤销</button></div>`);
+    $('calendarRecords').innerHTML = `<strong>已保存安排</strong>${[...holidays, ...makeups].join('') || '<p>暂无放假或调休安排。</p>'}`;
+  }
+  function applyCalendar(value, syncPlan = true) {
+    if (!value || !Array.isArray(value.holidays) || !Array.isArray(value.makeups)) return;
+    calendar = value;
+    refreshDailyState();
+    renderAll();
+    if (syncPlan) schedulePushSync();
+    if ($('calendarDialog').open) renderCalendarRecords();
+  }
+  async function saveCalendar(next) {
+    if (calendarSaving) return;
+    calendarSaving = true;
+    $('calendarStatus').textContent = '正在保存…';
+    try {
+      const saved = await window.ScheduleAuth.request('/calendar', { ...next, revision: calendar.revision });
+      applyCalendar(saved, false);
+      if (pushToken()) {
+        clearTimeout(pushSyncTimer);
+        try {
+          await syncPush();
+          $('calendarStatus').textContent = '已保存，课表与后台提醒已更新。';
+        } catch (error) {
+          $('calendarStatus').textContent = `课表已保存，提醒同步失败：${error.message}。请稍后重新打开课表。`;
+        }
+      } else $('calendarStatus').textContent = '已保存，课表已更新。';
+    } catch (error) {
+      if (error.status === 409) {
+        try { applyCalendar(await window.ScheduleAuth.request('/calendar')); } catch {}
+      }
+      $('calendarStatus').textContent = error.message;
+    } finally { calendarSaving = false; }
+  }
+  function openCalendarDialog() {
+    const { min, max } = calendarBounds();
+    for (const id of ['holidayStart', 'holidayEnd', 'makeupTarget', 'makeupSource']) {
+      $(id).min = min;
+      $(id).max = max;
+    }
+    $('holidayStart').value = dateKey(selectedDate());
+    $('holidayEnd').value = dateKey(selectedDate());
+    $('makeupTarget').value = dateKey(selectedDate());
+    $('makeupSource').value = '';
+    $('calendarStatus').textContent = '';
+    renderCalendarRecords();
+    $('calendarDialog').showModal();
+    window.ScheduleAuth.request('/calendar').then(latest => {
+      if (latest.revision > calendar.revision) applyCalendar(latest);
+    }).catch(error => { if ($('calendarDialog').open) $('calendarStatus').textContent = `记录刷新失败：${error.message}`; });
+  }
+  function setupCalendar() {
+    $('closeCalendarDialog').addEventListener('click', () => $('calendarDialog').close());
+    $('addHoliday').addEventListener('click', () => {
+      const start = $('holidayStart').value, end = $('holidayEnd').value;
+      if (!validCalendarDate(start) || !validCalendarDate(end) || end < start) {
+        $('calendarStatus').textContent = '请选择本学期内正确的起止日期。'; return;
+      }
+      const days = [];
+      for (let date = parseLocalDate(start); dateKey(date) <= end && days.length <= 30; date = addDays(date, 1)) days.push(dateKey(date));
+      if (days.length > 30) { $('calendarStatus').textContent = '单次最多设置 30 天放假。'; return; }
+      const holidays = [...new Set([...calendar.holidays, ...days])].sort();
+      if (calendar.makeups.some(item => holidays.includes(item.target))) {
+        $('calendarStatus').textContent = '补课目标日不能同时设为放假，请先撤销相应调休。'; return;
+      }
+      saveCalendar({ holidays, makeups: calendar.makeups });
+    });
+    $('addMakeup').addEventListener('click', () => {
+      const target = $('makeupTarget').value, source = $('makeupSource').value;
+      if (!validCalendarDate(target) || !validCalendarDate(source) || target === source) {
+        $('calendarStatus').textContent = '请先选本学期的空白补课日，再选不同的原课程日。'; return;
+      }
+      const targetDate = parseLocalDate(target), sourceDate = parseLocalDate(source);
+      if (baseCourses(mondayIndex(targetDate), weekFromDate(targetDate)).length ||
+          !baseCourses(mondayIndex(sourceDate), weekFromDate(sourceDate)).length) {
+        $('calendarStatus').textContent = '目标日须原本无课，来源日须原本有课。'; return;
+      }
+      if (calendar.holidays.includes(target) || calendar.makeups.some(item =>
+        [item.target, item.source].includes(target) || [item.target, item.source].includes(source))) {
+        $('calendarStatus').textContent = '所选日期已有放假或调休冲突，请先撤销相应记录。'; return;
+      }
+      saveCalendar({ holidays: calendar.holidays, makeups: [...calendar.makeups, { target, source }] });
+    });
+    $('calendarRecords').addEventListener('click', event => {
+      const holiday = event.target.closest('[data-remove-holiday]');
+      if (holiday) saveCalendar({ holidays: calendar.holidays.filter(key => key !== holiday.dataset.removeHoliday), makeups: calendar.makeups });
+      const makeup = event.target.closest('[data-remove-makeup]');
+      if (makeup) saveCalendar({ holidays: calendar.holidays, makeups: calendar.makeups.filter(item => item.target !== makeup.dataset.removeMakeup) });
+    });
   }
 
   function showWeekPicker() {
@@ -554,8 +686,9 @@
     $('jumpToday').addEventListener('click', jumpToday);
     $('skipCourseButton').addEventListener('click', () => {
       const course = D.courses[Number($('skipCourseButton').dataset.course)];
+      const day = Number($('skipCourseButton').dataset.day);
       if (!course) return;
-      const changed = isSkipped(course, selectedWeek) ? restoreCourse(course) : skipCourse(course);
+      const changed = isSkipped(course, day, selectedWeek) ? restoreCourse(course, day) : skipCourse(course, day);
       if (changed) $('courseDialog').close();
     });
     $('dayMap').addEventListener('click', event => {
@@ -563,6 +696,7 @@
       if (button) openCourse(Number(button.dataset.course));
     });
     $('dayDashboard').addEventListener('click', event => {
+      if (event.target.closest('[data-calendar-open]')) { openCalendarDialog(); return; }
       const skip = event.target.closest('[data-skip]');
       if (skip) {
         skipCourse(D.courses[Number(skip.dataset.skip)]);
@@ -757,7 +891,7 @@
           const time = periodTime(course);
           const start = timeToMinutes(time.start), end = timeToMinutes(time.end);
           const suffix = `${key}-c${course._id}`;
-          if (isSkipped(course, week)) {
+          if (isSkipped(course, day, week)) {
             add(`${suffix}-p30`, date, start, 30, '已翘课程 · 30 分钟后开始', `${course.name} · ${time.start}–${time.end} · ${course.location}`, 900);
             add(`${suffix}-p5`, date, start, 5, '已翘课程 · 5 分钟后开始', `${course.name} · ${course.location}`, 600);
             add(`${suffix}-e30`, date, end, 30, '已翘课程 · 30 分钟后结束', `${course.name} · ${time.end}结束`, 900);
@@ -784,8 +918,7 @@
     const registration = await navigator.serviceWorker.ready;
     const subscription = await registration.pushManager.getSubscription();
     if (!subscription || subscription.endpoint !== readStorage('neu-schedule-push-endpoint-v1')) {
-      pushStatus('推送订阅已变化，请输入配对码重新开启。');
-      return;
+      throw new Error('推送订阅已变化，请重新开启后台提醒');
     }
     const result = await pushRequest('/sync', { jobs: buildPushJobs() }, token);
     pushStatus(`后台提醒已同步：${result.count} 条未来提醒。`);
@@ -808,7 +941,7 @@
     pushStatus('正在建立订阅…');
     try {
       const config = await pushRequest('/config');
-      const registration = await navigator.serviceWorker.register('./sw.js?v=24', { updateViaCache: 'none' });
+      const registration = await navigator.serviceWorker.register('./sw.js?v=25', { updateViaCache: 'none' });
       let subscription = await registration.pushManager.getSubscription();
       if (subscription) {
         const oldKey = subscription.options?.applicationServerKey;
@@ -972,6 +1105,7 @@
         gymStore.replace(state.sessions);
         skipped = new Set(state.skipDay === dateKey(nowDate()) ? state.skips.map(id => `${state.skipDay}:${id}`) : []);
         writeStorage('neu-schedule-skipped-v7', JSON.stringify([...skipped]));
+        if (state.calendar?.revision >= calendar.revision) calendar = state.calendar;
         if (!viewModeTouched && !new URLSearchParams(location.search).has('view') && ['week', 'day', 'gym'].includes(state.settings?.viewMode))
           viewMode = state.settings.viewMode;
         renderAll();
@@ -983,6 +1117,7 @@
 
   function boot() {
     setupInteractions();
+    setupCalendar();
     setupPush();
     $('cloudButton').addEventListener('click', () => {
       cloudStatus(cloud?.connected() ? '云端已连接；可手动刷新数据' : '请使用通行密钥登录');
@@ -1005,7 +1140,7 @@
     renderAll();
     initCloud();
     clearAttentionBadge();
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js?v=24', { updateViaCache: 'none' }).then(schedulePushSync).catch(() => {});
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js?v=25', { updateViaCache: 'none' }).then(schedulePushSync).catch(() => {});
     setInterval(() => {
       if (refreshDailyState()) { renderAll(); return; }
       renderHeader();

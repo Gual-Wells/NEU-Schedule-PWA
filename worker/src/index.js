@@ -1,5 +1,6 @@
 import { rawPayload, sendPushNotification } from '@mmmike/web-push/send';
 import { authRoute, sessionFor } from './auth.js';
+import { readCalendar, validateCalendar } from './calendar.js';
 
 const encoder = new TextEncoder();
 const MAX_JOBS = 1800;
@@ -68,16 +69,18 @@ function validSession(value) {
 
 async function readState(env) {
   const today = shanghaiDay();
-  const [sessions, skips, settings] = await Promise.all([
+  const [sessions, skips, settings, calendar] = await Promise.all([
     env.DB.prepare('SELECT id, start_at, end_at, closes_at, end_reason FROM gym_sessions ORDER BY start_at').all(),
     env.DB.prepare('SELECT course_ids FROM daily_skips WHERE day_key = ?').bind(today).first(),
-    env.DB.prepare('SELECT content FROM app_settings WHERE id = 1').first()
+    env.DB.prepare('SELECT content FROM app_settings WHERE id = 1').first(),
+    readCalendar(env)
   ]);
   return {
     sessions: sessions.results.map(row => ({ id: row.id, startAt: row.start_at, endAt: row.end_at, closesAt: row.closes_at, endReason: row.end_reason })),
     skips: skips ? JSON.parse(skips.course_ids) : [],
     skipDay: today,
-    settings: settings ? JSON.parse(settings.content) : {}
+    settings: settings ? JSON.parse(settings.content) : {},
+    calendar
   };
 }
 
@@ -139,8 +142,15 @@ async function route(request, env) {
   if (request.method === 'GET' && url.pathname === '/auth/status') return authRoute(request, env);
   if (request.method === 'GET' && url.pathname === '/schedule') {
     if (!await sessionFor(request, env)) return json({ error: '请先登录' }, 401);
-    const row = await env.DB.prepare('SELECT content, revision, updated_at FROM schedule_data WHERE id = 1').first();
-    return row ? json({ data: JSON.parse(row.content), revision: row.revision, updatedAt: row.updated_at }) : json({ error: '课表尚未导入' }, 503);
+    const [row, calendar] = await Promise.all([
+      env.DB.prepare('SELECT content, revision, updated_at FROM schedule_data WHERE id = 1').first(),
+      readCalendar(env)
+    ]);
+    return row ? json({ data: JSON.parse(row.content), revision: row.revision, updatedAt: row.updated_at, calendar }) : json({ error: '课表尚未导入' }, 503);
+  }
+  if (request.method === 'GET' && url.pathname === '/calendar') {
+    if (!await sessionFor(request, env)) return json({ error: '请先登录' }, 401);
+    return json(await readCalendar(env));
   }
   if (request.method === 'GET' && url.pathname === '/state') {
     if (!await sessionFor(request, env)) return json({ error: '请先登录' }, 401);
@@ -156,6 +166,30 @@ async function route(request, env) {
   if (url.pathname === '/state/commit') {
     if (request.headers.get('origin') !== env.APP_ORIGIN || !await sessionFor(request, env)) return json({ error: '请先登录' }, 401);
     return commitState(input, env);
+  }
+  if (url.pathname === '/calendar') {
+    if (request.headers.get('origin') !== env.APP_ORIGIN || !await sessionFor(request, env)) return json({ error: '请先登录' }, 401);
+    if (!Number.isSafeInteger(input.revision) || input.revision < 1) return json({ error: '请先刷新放假记录' }, 400);
+    const scheduleRow = await env.DB.prepare('SELECT content FROM schedule_data WHERE id = 1').first();
+    if (!scheduleRow) return json({ error: '课表尚未导入' }, 503);
+    let calendar;
+    try { calendar = validateCalendar(input, JSON.parse(scheduleRow.content)); }
+    catch (error) { return json({ error: error.message }, 400); }
+    const previous = await readCalendar(env);
+    const affectedDates = [...new Set([
+      ...previous.holidays, ...calendar.holidays,
+      ...previous.makeups.flatMap(item => [item.target, item.source]),
+      ...calendar.makeups.flatMap(item => [item.target, item.source])
+    ])];
+    const now = Date.now();
+    const result = await env.DB.prepare('UPDATE calendar_overrides SET content = ?, revision = revision + 1, updated_at = ? WHERE id = 1 AND revision = ?')
+      .bind(JSON.stringify(calendar), now, input.revision).run();
+    if (result.meta.changes !== 1) return json({ error: '放假记录已在其他设备更改，请刷新后重试' }, 409);
+    await env.DB.batch([
+      env.DB.prepare('DELETE FROM reminders WHERE sent_at IS NULL AND substr(reminder_id, 1, 10) IN (SELECT value FROM json_each(?))').bind(JSON.stringify(affectedDates)),
+      env.DB.prepare('UPDATE devices SET plan_hash = NULL')
+    ]);
+    return json(await readCalendar(env));
   }
 
   if (url.pathname === '/register') {

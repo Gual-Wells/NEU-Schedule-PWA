@@ -4,3 +4,6 @@ worker/.wrangler-out/
 worker/.dev.vars
 worker/.secrets*
 worker/gateway/dist/
+.calendar-preview.html
+.calendar-preview.png
+.chrome-preview-profile/

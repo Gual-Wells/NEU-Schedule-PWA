@@ -10,10 +10,10 @@
   <meta name="apple-mobile-web-app-title" content="课表" />
   <meta name="format-detection" content="telephone=no" />
   <title>课表</title>
-  <link rel="manifest" href="./manifest.webmanifest?v=24" />
+  <link rel="manifest" href="./manifest.webmanifest?v=25" />
   <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
   <link rel="icon" href="./icons/icon-192.png" />
-  <link rel="stylesheet" href="./styles.css?v=24" />
+  <link rel="stylesheet" href="./styles.css?v=25" />
 </head>
 <body>
   <main class="app-shell" id="app">
@@ -95,6 +95,24 @@
     </form>
   </dialog>
 
+  <dialog id="calendarDialog" class="sheet-dialog">
+    <div class="sheet calendar-sheet">
+      <div class="sheet-head"><div><span class="sheet-kicker">本学期安排</span><h2>放假与调休</h2></div><button class="close-button" id="closeCalendarDialog" type="button" aria-label="关闭">×</button></div>
+      <section class="calendar-section">
+        <strong>放假</strong><p>选一天或一段日期。放假日取消课程，健身房开放时间仍按当天显示。</p>
+        <div class="calendar-fields"><label>开始日期<input id="holidayStart" type="date" /></label><label>结束日期<input id="holidayEnd" type="date" /></label></div>
+        <button class="calendar-command" id="addHoliday" type="button">设为放假</button>
+      </section>
+      <section class="calendar-section">
+        <strong>调休补课</strong><p>先选原本无课程的补课日，再选原课程日。课程会从后者搬到前者。</p>
+        <div class="calendar-fields"><label>① 补课目标 · 无课程日<input id="makeupTarget" type="date" /></label><label>② 原课程日<input id="makeupSource" type="date" /></label></div>
+        <button class="calendar-command" id="addMakeup" type="button">确认调休</button>
+      </section>
+      <p class="calendar-status" id="calendarStatus" role="status"></p>
+      <div class="calendar-records" id="calendarRecords"></div>
+    </div>
+  </dialog>
+
   <dialog id="pushDialog" class="sheet-dialog">
     <div class="sheet push-sheet">
       <div class="sheet-grabber"></div>
@@ -125,10 +143,10 @@
     </form>
   </dialog>
 
-  <script src="./gym-store.js?v=24"></script>
-  <script src="./webauthn-browser.js?v=24"></script>
-  <script src="./auth-client.js?v=24"></script>
-  <script src="./cloud-sync.js?v=24"></script>
-  <script src="./bootstrap.js?v=24"></script>
+  <script src="./gym-store.js?v=25"></script>
+  <script src="./webauthn-browser.js?v=25"></script>
+  <script src="./auth-client.js?v=25"></script>
+  <script src="./cloud-sync.js?v=25"></script>
+  <script src="./bootstrap.js?v=25"></script>
 </body>
 </html>

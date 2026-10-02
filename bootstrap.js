@@ -15,20 +15,21 @@
   try { localStorage.removeItem('neu-schedule-data-token-v1'); } catch {}
   window.PUSH_API_BASE = location.origin;
 
-  function start(data) {
+  function start(data, calendar) {
     window.AUTHENTICATED = true;
     window.APP_DATA = data;
+    window.APP_CALENDAR = calendar;
     app.innerHTML = appMarkup;
     app.classList.remove('login-mode');
     const script = document.createElement('script');
-    script.src = './app.js?v=24';
+    script.src = './app.js?v=25';
     document.body.append(script);
   }
   async function load() {
     const result = await auth.request('/schedule');
     if (!result.data?.semester || !Array.isArray(result.data.courses) || !result.data.gym) throw new Error('课表数据无效');
     try { localStorage.setItem(cacheKey, JSON.stringify(result.data)); } catch {}
-    start(result.data);
+    start(result.data, result.calendar);
   }
   function show(message, state) {
     app.classList.add('login-mode');

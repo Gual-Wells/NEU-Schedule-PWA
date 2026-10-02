@@ -37,6 +37,7 @@ jobs:
           node scripts/validate-cloud.mjs
           node scripts/validate-login.mjs
           node scripts/validate-push.mjs
+          node scripts/validate-calendar.mjs
       - name: Prepare public files
         run: |
           mkdir public

@@ -12,6 +12,7 @@
 
 - `GET /schedule`：凭会话读取 D1 的课程、节次和健身房开放表；网页不提供课表写入接口。
 - `GET /state`、`POST /state/commit`：凭会话同步训练记录、当天翘课和视图偏好。过期翘课不能写入，Cron 清理旧日状态。
+- `GET /calendar`、`POST /calendar`：凭会话读写本学期放假与调休安排；用修订号拒绝跨设备覆盖，限制调休目标为原本无课日期、来源为原本有课日期。同一数据也随 `/schedule` 和 `/state` 返回，供课表、健身冲突计算与推送计划统一使用。
 - `POST /register`：凭会话登记浏览器 PushSubscription，返回设备专用令牌。
 - `POST /sync`、`/test`、`/disable`：同时验证登录会话和设备令牌，更新提醒、发送测试或撤销订阅。
 - Cron `* * * * *`：领取到期任务、发送 Web Push、清理旧数据。

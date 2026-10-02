@@ -1,15 +1,15 @@
-const CACHE = 'neu-schedule-v24';
+const CACHE = 'neu-schedule-v25';
 const CORE = [
   './',
   './index.html',
-  './styles.css?v=24',
-  './gym-store.js?v=24',
-  './webauthn-browser.js?v=24',
-  './auth-client.js?v=24',
-  './cloud-sync.js?v=24',
-  './bootstrap.js?v=24',
-  './app.js?v=24',
-  './manifest.webmanifest?v=24',
+  './styles.css?v=25',
+  './gym-store.js?v=25',
+  './webauthn-browser.js?v=25',
+  './auth-client.js?v=25',
+  './cloud-sync.js?v=25',
+  './bootstrap.js?v=25',
+  './app.js?v=25',
+  './manifest.webmanifest?v=25',
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/apple-touch-icon.png'
@@ -57,7 +57,7 @@ self.addEventListener('activate', event => {
 self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
   const path = new URL(event.request.url).pathname;
-  if (path.startsWith('/auth/') || ['/schedule', '/state', '/config', '/health'].includes(path)) return;
+  if (path.startsWith('/auth/') || ['/schedule', '/calendar', '/state', '/config', '/health'].includes(path)) return;
 
   if (event.request.mode === 'navigate') {
     event.respondWith(
