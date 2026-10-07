@@ -53,3 +53,9 @@ Worker、每分钟 Cron、D1 数据库和部署命令见 [`worker/README.md`](wo
 推送属于尽力投递，不是保证准点的闹钟。设备需保留通知权限与有效订阅；更换站点、设备或重装 PWA 后需要重新开启。初始化密钥和 VAPID 私钥只保存在 Cloudflare Secret 与仓库外备份，不进入公开仓库。
 
 收到推送时，支持 Badging API 的主屏幕课表图标会显示一个未查看标记；打开课表后清除。解锁使用手机时通知横幅是否持续显示由 iPhone 的“设置 → 通知 → 课表 → 横幅风格”控制；如果设备提供“持续”选项，用户可自行选择。持续横幅不等于锁屏实时活动。
+
+## Intellectual property and third-party components
+
+Original application code, interface design, schedule/gym integration logic, documentation, data modelling and other material owned or licensable by Gual Wells are governed by [GW-ROL-1.0](LICENSE), a **reference-only, non-open-source** license. The repository may be read and studied and unprotected ideas may be independently reimplemented, but substantial protected expression may not be copied, redistributed, republished, adapted, commercially exploited, or used as a model-training/retrieval corpus without permission except where applicable law allows.
+
+Third-party packages including SimpleWebAuthn, web-push components, Wrangler/Cloudflare tooling, and any platform APIs remain under their own licenses and terms. Course information, institutional names/marks, source documents and any other third-party data are not relicensed by GW-ROL-1.0.
