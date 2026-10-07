@@ -1,4 +1,4 @@
-GUAL WELLS REFERENCE-ONLY LICENSE 1.0 (GW-ROL-1.0)
+GUAL WELLS REFERENCE-ONLY LICENSE 1.1 (GW-ROL-1.1)
 
 Copyright (c) 2026 Gual Wells. All rights reserved.
 
@@ -6,7 +6,7 @@ This is a source-available, reference-only license. It is not an open-source lic
 
 1. Covered Materials
 
-"Original Materials" means source code, documentation, text, original data or database arrangement, designs, graphics, project-specific protocols, workflows, and other material in this repository for which Gual Wells owns, or is authorized to license, the relevant rights.
+"Original Materials" means source code, documentation, text, original data or database arrangement, designs, graphics, project-specific protocols, workflows, generated-work compilations, and other material in this repository for which Gual Wells owns, or is authorized to license, the relevant rights.
 
 This License does not apply to third-party software, libraries, publications, dictionary or textbook content, media, data, model outputs owned by third parties, trademarks, or other materials identified by their own provenance or terms ("Third-Party Materials"). Third-Party Materials remain governed by their respective rightsholders and licenses.
 
@@ -24,43 +24,56 @@ Except where applicable law gives you a non-waivable right, or where you have pr
 
 (a) reproduce, distribute, publish, mirror, host, sublicense, sell, rent, or otherwise commercially exploit substantial protected portions of the Original Materials;
 (b) modify, adapt, translate, or publish derivative works based on protected expression in the Original Materials;
-(c) incorporate substantial protected portions into another product, service, repository, dataset, documentation set, or publication; or
+(c) incorporate substantial protected portions into another product, service, repository, dataset, documentation set, publication, or submission; or
 (d) use the Original Materials as training or fine-tuning data, a model corpus, embedding or retrieval corpus, benchmark dataset, or synthetic-data seed.
 
 Nothing in this section restricts independent creation that does not copy protected expression, or any use that applicable law expressly permits.
 
-4. Attribution and Integrity
+4. Competition, Submission, Publication, and Authorship Claims
+
+Except where applicable law gives you a non-waivable right, or where you have prior written permission from Gual Wells, no permission is granted to submit, nominate, register, enter, publish, or present all or a substantial protected portion of the Original Materials in any:
+
+(a) literary, artistic, technical, academic, educational, commercial, or other competition, contest, prize, award, call for submissions, anthology, journal, magazine, publisher, platform, exhibition, grant, credential, portfolio, evaluation, or similar process; or
+(b) process in which authorship, originality, provenance, ownership, contribution, or authorization is material,
+
+when the material is represented as the submitter's or another person's original work, co-authored work, independently created work, or authorized work without a truthful basis for that representation.
+
+You must not remove, replace, conceal, or falsify authorship, generation, provenance, archive, copyright, license, or attribution information for the purpose of such a submission or claim.
+
+This section does not create exclusive rights in material that applicable law does not protect. It withholds permission only to the extent permission from the rightsholder is legally required and separately preserves provenance and anti-misrepresentation notices.
+
+5. Attribution and Integrity
 
 You must not remove or falsify copyright, provenance, authorship, license, or attribution notices, or misrepresent the origin of the Original Materials. Permission to refer to a project does not imply endorsement, affiliation, sponsorship, or authorship.
 
-5. Other Rights Reserved
+6. Other Rights Reserved
 
 No patent, trademark, service-mark, trade-name, logo, trade-dress, design, database, trade-secret, publicity, or endorsement license is granted. Public disclosure may affect whether particular information can remain a trade secret; this License does not recreate secrecy after lawful public disclosure.
 
-6. AI-Generated or AI-Assisted Material
+7. AI-Generated or AI-Assisted Material
 
 A provenance label such as "ChatGPT", "Codex", "DIGR", or a model name describes generation history; it does not by itself determine copyrightability. Rights in AI-generated or AI-assisted material vary by jurisdiction. This License asserts only rights that applicable law recognizes.
 
 To the extent protectable, human-authored selection, coordination, arrangement, editing, compilation, surrounding text or code, and other original human contributions remain covered as Original Materials. Any contractual assignment of output rights by an AI service is effective only to the extent that the service had transferable rights and applicable law recognizes those rights.
 
-7. Public GitHub Hosting
+8. Public GitHub Hosting
 
 Public hosting on GitHub necessarily remains subject to GitHub's Terms of Service, including platform-specific rights that allow GitHub users to view and fork public repositories through GitHub functionality. This License does not purport to revoke those platform-required rights. No broader off-platform permission is granted by public visibility alone.
 
-8. Historical Grants
+9. Historical Grants
 
-This License does not retroactively revoke any license validly granted for an earlier commit, release, or copy. In particular, material that was validly obtained under the MIT License remains usable under the MIT License for the historical version to which that grant applied.
+This License does not retroactively revoke any license validly granted for an earlier commit, release, or copy. Material validly obtained under the MIT License remains usable under the MIT License for the historical version to which that grant applied. Material validly obtained under GW-ROL-1.0 remains subject to GW-ROL-1.0 for that historical version.
 
-Beginning with a repository revision that carries GW-ROL-1.0, newly added or modified Original Materials are offered only under GW-ROL-1.0 unless a file or directory expressly states otherwise.
+Beginning with a repository revision that carries GW-ROL-1.1, newly added or modified Original Materials are offered only under GW-ROL-1.1 unless a file or directory expressly states otherwise.
 
-9. Contributions
+10. Contributions
 
 External suggestions are welcome, but no external code or content contribution is accepted for incorporation unless the repository owner explicitly accepts it. A contributor represents that they have the rights necessary to submit their contribution. Unless a separate written agreement applies, an accepted contribution is made available under this same License and the GitHub Terms of Service. No contribution transfers ownership of Gual Wells's pre-existing intellectual property.
 
-10. Disclaimer
+11. Disclaimer
 
 THE ORIGINAL MATERIALS ARE PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE, AND NON-INFRINGEMENT. TO THE MAXIMUM EXTENT PERMITTED BY LAW, THE RIGHTSHOLDER IS NOT LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY ARISING FROM USE OF THE MATERIALS.
 
-11. Permissions
+12. Permissions
 
 For permission beyond this License, contact the repository owner through the Gual-Wells GitHub account.
