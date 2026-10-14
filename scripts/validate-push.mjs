@@ -11,9 +11,9 @@ class FixedDate extends Date {
   constructor(...args) { super(...(args.length ? args : [at.getTime()])); }
   static now() { return at.getTime(); }
 }
-function makeModel(skipped) {
+function makeModel(restores) {
   const window = {};
-  const localStorage = { getItem(key) { return key === 'neu-schedule-skipped-v7' ? JSON.stringify(skipped) : null; } };
+  const localStorage = { getItem(key) { return key === 'neu-schedule-restored-v1' ? JSON.stringify(restores) : null; } };
   const context = vm.createContext({ window, localStorage, location: { search: '' }, URLSearchParams, Date: FixedDate, Intl, setTimeout, clearTimeout });
   vm.runInContext(dataSource, context);
   vm.runInContext(gymSource, context);
@@ -21,15 +21,16 @@ function makeModel(skipped) {
   return window.__test;
 }
 const normalModel = makeModel([]);
-const normal = normalModel.buildPushJobs();
-const skipped = makeModel(['2026-10-06:3']).buildPushJobs();
+const normal = normalModel.buildPushJobs(); // Default-skipped for the whole term.
+const restored = makeModel(['2026-10-06:3']).buildPushJobs();
 assert(normal.length > 300 && normal.length <= 1800, `unexpected job count ${normal.length}`);
 assert(Buffer.byteLength(JSON.stringify({ jobs: normal }), 'utf8') < 180000, 'plan exceeds Worker body limit');
 assert.equal(new Set(normal.map(job => job.id)).size, normal.length, 'duplicate reminder IDs');
 assert(normal.some(job => job.id === '2026-10-06-c3-p30'), 'Tuesday class reminder missing');
-assert.equal(skipped.length, normal.length, 'skipped class must retain its reminder times');
-assert.match(skipped.find(job => job.id === '2026-10-06-c3-p30').title, /已翘课程/);
-assert.equal(skipped.find(job => job.id === '2026-10-06-c3-p30').dueAt, normal.find(job => job.id === '2026-10-06-c3-p30').dueAt);
+assert.equal(restored.length, normal.length, 'restoring class must retain its reminder times');
+assert.match(normal.find(job => job.id === '2026-10-06-c3-p30').title, /已翘课程/);
+assert.match(restored.find(job => job.id === '2026-10-06-c3-p30').title, /30 分钟后上课/);
+assert.equal(restored.find(job => job.id === '2026-10-06-c3-p30').dueAt, normal.find(job => job.id === '2026-10-06-c3-p30').dueAt);
 assert.equal(JSON.stringify(normalModel.gymSlots(7, 5)), JSON.stringify([[420, 930], [1020, 1240]]), 'week 5 Sunday must close for the venue class');
 assert.equal(JSON.stringify(normalModel.gymSlots(7, 10)), JSON.stringify([[420, 1240]]), 'week 10 Sunday must remain open');
 assert.equal(normal.find(job => job.id === '2026-10-11-g1-open')?.dueAt, new Date(2026, 9, 11, 16, 30).getTime(), 'gym reopening reminder must follow the week 6 closure');
