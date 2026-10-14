@@ -18,9 +18,9 @@ class FixedDate extends Date {
   constructor(...args) { super(...(args.length ? args : [at.getTime()])); }
   static now() { return at.getTime(); }
 }
-function model(calendar, skip = []) {
+function model(calendar, restores = []) {
   const window = { APP_CALENDAR: { ...calendar, revision: 2 } };
-  const localStorage = { getItem(key) { return key === 'neu-schedule-skipped-v7' ? JSON.stringify(skip) : null; } };
+  const localStorage = { getItem(key) { return key === 'neu-schedule-restored-v1' ? JSON.stringify(restores) : null; } };
   const context = vm.createContext({ window, localStorage, location: { search: '' }, URLSearchParams, Date: FixedDate, Intl, setTimeout, clearTimeout });
   vm.runInContext(dataSource, context);
   vm.runInContext(gymSource, context);
@@ -39,8 +39,10 @@ const jobs = moved.buildPushJobs();
 assert(jobs.some(job => job.id.startsWith('2026-09-05-c')), 'moved lessons receive target-day reminders');
 assert(!jobs.some(job => job.id.startsWith('2026-09-07-c')), 'source-day reminders clear');
 assert(!jobs.some(job => job.id.startsWith('2026-09-08-c')), 'holiday reminders clear');
-assert(moved.dayFreeWindows(6, 1).length < originalModel.dayFreeWindows(6, 1).length ||
-  JSON.stringify(moved.dayFreeWindows(6, 1)) !== JSON.stringify(originalModel.dayFreeWindows(6, 1)), 'moved lessons change gym free windows');
-const skipped = model({ holidays: [], makeups: [{ target: '2026-09-05', source: '2026-09-07' }] }, ['2026-09-05:10']);
-assert(skipped.activeCourses(6, 1).length < skipped.rawCourses(6, 1).length, 'today skip follows the moved date');
-console.log('Calendar overrides affect timetable, free gym windows, skips and push jobs');
+assert.equal(originalModel.activeCourses(1, 2).length, 0, 'all lessons start skipped');
+assert.equal(moved.activeCourses(6, 1).length, 0, 'moved lessons also start skipped');
+const restored = model({ holidays: [], makeups: [{ target: '2026-09-05', source: '2026-09-07' }] }, ['2026-09-05:10']);
+assert.equal(restored.activeCourses(6, 1).length, 1, 'only manual restoration activates a moved lesson');
+assert.notEqual(JSON.stringify(restored.dayFreeWindows(6, 1)), JSON.stringify(moved.dayFreeWindows(6, 1)), 'restoration divides gym time');
+assert(jobs.some(job => job.title.startsWith('已翘课程')), 'default skipped classes get skipped notifications');
+console.log('Calendar overrides, default skips, restored lessons, gym windows and reminders OK');

@@ -38,6 +38,7 @@ jobs:
           node scripts/validate-login.mjs
           node scripts/validate-push.mjs
           node scripts/validate-calendar.mjs
+          node --test worker/test/course-state.test.mjs
       - name: Prepare public files
         run: |
           mkdir public
