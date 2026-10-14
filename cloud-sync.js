@@ -7,7 +7,7 @@
   const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' }).format(Date.now());
   let queue = [];
   try { const saved = JSON.parse(get(QUEUE) || '[]'); if (Array.isArray(saved)) queue = saved; } catch {}
-  let snapshot = () => ({ sessions: [], skips: [], viewMode: 'week' });
+  let snapshot = () => ({ sessions: [], restores: [], viewMode: 'week' });
   let apply = () => {};
   let status = () => {};
   let busy = null;
@@ -43,8 +43,8 @@
     for (const item of before) if (!next.has(item.id)) ops.push({ type: 'session-delete', id: item.id });
     enqueue(ops);
   }
-  function recordSkips(ids) {
-    if (connected() && get(MIGRATED) === 'yes') enqueue([{ type: 'skips', day: today(), ids }]);
+  function recordRestores(ids) {
+    if (connected()) enqueue([{ type: 'restores', day: today(), ids }]);
   }
   function recordSettings(viewMode) {
     if (connected()) enqueue([{ type: 'settings', settings: { viewMode } }]);
@@ -54,13 +54,14 @@
     if (get(MIGRATED) !== 'yes') {
       const local = snapshot();
       const initial = local.sessions.map(session => ({ type: 'session-upsert', session }));
-      if (local.skips.length) initial.push({ type: 'skips', day: today(), ids: local.skips });
+      if (local.restores.length) initial.push({ type: 'restores', day: today(), ids: local.restores });
       if (get('neu-schedule-view-mode')) initial.push({ type: 'settings', settings: { viewMode: local.viewMode } });
       queue.unshift(...initial);
       saveQueue();
       set(MIGRATED, 'pending');
     }
-    queue = queue.filter(op => op.type !== 'skips' || op.day === today());
+    // Old skip-list writes cannot be replayed as restored-attendance exceptions.
+    queue = queue.filter(op => op.type !== 'skips' && (op.type !== 'restores' || op.day === today()));
     saveQueue();
     while (queue.length) {
       const batch = queue.slice(0, 100);
@@ -70,6 +71,9 @@
     }
     set(MIGRATED, 'yes');
     const state = await request('/state');
+    // In-flight cloud reads cannot overwrite a later local attendance toggle.
+    const pending = [...queue].reverse().find(op => op.type === 'restores' && op.day === today());
+    if (pending) state.restores = pending.ids;
     apply(state);
     status('云端已同步');
   }
@@ -98,5 +102,5 @@
       set('neu-schedule-data-cache-v1', '');
     }
   }
-  window.CloudSync = { initialize, logout, sync, connected, recordSessions, recordSkips, recordSettings };
+  window.CloudSync = { initialize, logout, sync, connected, recordSessions, recordRestores, recordSettings };
 })();

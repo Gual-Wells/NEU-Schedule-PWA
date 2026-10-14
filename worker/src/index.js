@@ -1,6 +1,7 @@
 import { rawPayload, sendPushNotification } from '@mmmike/web-push/send';
 import { authRoute, sessionFor } from './auth.js';
 import { readCalendar, validateCalendar } from './calendar.js';
+import { decodeRestores, encodeRestores } from './course-state.js';
 
 const encoder = new TextEncoder();
 const MAX_JOBS = 1800;
@@ -77,7 +78,7 @@ async function readState(env) {
   ]);
   return {
     sessions: sessions.results.map(row => ({ id: row.id, startAt: row.start_at, endAt: row.end_at, closesAt: row.closes_at, endReason: row.end_reason })),
-    skips: skips ? JSON.parse(skips.course_ids) : [],
+    restores: skips ? decodeRestores(skips.course_ids) : [],
     skipDay: today,
     settings: settings ? JSON.parse(settings.content) : {},
     calendar
@@ -96,10 +97,10 @@ async function commitState(input, env) {
         .bind(s.id, s.startAt, s.endAt, s.closesAt, s.endReason, now));
     } else if (op.type === 'session-delete' && typeof op.id === 'string' && /^[A-Za-z0-9_-]{1,90}$/.test(op.id)) {
       commands.push(env.DB.prepare('DELETE FROM gym_sessions WHERE id = ?').bind(op.id));
-    } else if (op.type === 'skips' && op.day === today && Array.isArray(op.ids) && op.ids.length <= 300 &&
+    } else if (op.type === 'restores' && op.day === today && Array.isArray(op.ids) && op.ids.length <= 300 &&
       op.ids.every(id => Number.isInteger(id) && id >= 0 && id < 300)) {
       commands.push(env.DB.prepare('INSERT INTO daily_skips (day_key, course_ids, updated_at) VALUES (?, ?, ?) ON CONFLICT(day_key) DO UPDATE SET course_ids=excluded.course_ids, updated_at=excluded.updated_at')
-        .bind(today, JSON.stringify([...new Set(op.ids)]), now));
+        .bind(today, encodeRestores(op.ids), now));
     } else if (op.type === 'settings' && op.settings && ['week', 'day', 'gym'].includes(op.settings.viewMode) && Object.keys(op.settings).length === 1) {
       commands.push(env.DB.prepare('INSERT INTO app_settings (id, content, updated_at) VALUES (1, ?, ?) ON CONFLICT(id) DO UPDATE SET content=excluded.content, updated_at=excluded.updated_at')
         .bind(JSON.stringify(op.settings), now));

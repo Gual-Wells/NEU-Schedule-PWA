@@ -42,9 +42,14 @@
   };
   const skipKey = (date, course) => `${dateKey(date)}:${course._id}`;
   let calendar = window.APP_CALENDAR || { holidays: [], makeups: [], revision: 1 };
-  let skipped;
-  try { skipped = new Set(JSON.parse(localStorage.getItem('neu-schedule-skipped-v7') || '[]')); }
-  catch (_) { skipped = new Set(); }
+  // Every course defaults to skipped; only explicit restorations count as attendance.
+  // Legacy skip records are deliberately ignored by the new opt-in model.
+  const RESTORED_KEY = 'neu-schedule-restored-v1';
+  let restored;
+  try {
+    const saved = JSON.parse(localStorage.getItem(RESTORED_KEY) || '[]');
+    restored = new Set(Array.isArray(saved) ? saved : []);
+  } catch (_) { restored = new Set(); }
   let activeDateKey = dateKey(nowDate());
   const cloud = window.CloudSync;
   const gymStore = window.GymStore.create(localStorage, (before, after) => cloud?.recordSessions(before, after));
@@ -114,7 +119,7 @@
     if (calendar.makeups.some(item => item.source === key)) return [];
     return baseCourses(day, week);
   }
-  const isSkipped = (course, day, week) => skipped.has(skipKey(addDays(weekStart(week), day - 1), course));
+  const isSkipped = (course, day, week) => !restored.has(skipKey(addDays(weekStart(week), day - 1), course));
   function activeCourses(day, week) {
     return rawCourses(day, week).filter(course => !isSkipped(course, day, week));
   }
@@ -352,9 +357,9 @@
     });
   }
 
-  function persistSkipped() {
-    writeStorage('neu-schedule-skipped-v7', JSON.stringify([...skipped]));
-    cloud?.recordSkips([...skipped].map(key => Number(key.split(':').pop())).filter(Number.isInteger));
+  function persistRestored() {
+    writeStorage(RESTORED_KEY, JSON.stringify([...restored]));
+    cloud?.recordRestores([...restored].map(key => Number(key.split(':').pop())).filter(Number.isInteger));
     schedulePushSync();
   }
   function refreshDailyState() {
@@ -363,9 +368,9 @@
     const changedDay = today !== activeDateKey;
     const wasShowingToday = changedDay && dateKey(selectedDate()) === activeDateKey;
     const validKeys = new Set(rawCourses(mondayIndex(now), currentWeek()).map(course => skipKey(now, course)));
-    if (changedDay || [...skipped].some(key => !validKeys.has(key))) {
-      skipped = new Set([...skipped].filter(key => validKeys.has(key)));
-      persistSkipped();
+    if (changedDay || [...restored].some(key => !validKeys.has(key))) {
+      restored = new Set([...restored].filter(key => validKeys.has(key)));
+      persistRestored();
     }
     try { if (gymStore.reconcile(now.getTime())) schedulePushSync(); }
     catch (error) { gymMessage = `训练记录保存失败：${error.message}`; }
@@ -404,16 +409,16 @@
   function skipCourse(course, day = selectedDay) {
     refreshDailyState();
     if (!canSkipCourse(course, day)) return false;
-    skipped.add(skipKey(addDays(weekStart(selectedWeek), day - 1), course));
-    persistSkipped();
+    restored.delete(skipKey(addDays(weekStart(selectedWeek), day - 1), course));
+    persistRestored();
     renderAll();
     return true;
   }
   function restoreCourse(course, day = selectedDay) {
     refreshDailyState();
     if (!canSkipCourse(course, day)) return false;
-    skipped.delete(skipKey(addDays(weekStart(selectedWeek), day - 1), course));
-    persistSkipped();
+    restored.add(skipKey(addDays(weekStart(selectedWeek), day - 1), course));
+    persistRestored();
     renderAll();
     return true;
   }
@@ -484,7 +489,7 @@
     const now = nowDate();
     const hourAngle = (now.getHours() % 12 + now.getMinutes() / 60) * 30;
     const minuteAngle = now.getMinutes() * 6;
-    const skipCount = rawCourses(selectedDay, selectedWeek).filter(course => skipped.has(skipKey(date, course))).length;
+    const skipCount = courses.filter(course => isSkipped(course, selectedDay, selectedWeek)).length;
     $('dayDashboard').innerHTML = `
       <div class="dashboard-date"><strong>${weekdayLong[selectedDay]} · ${fmtMD.format(date)}</strong><span>第 ${selectedWeek} 周 · ${courses.length} 段课程${skippedCourses.length ? ` · 已翘 ${skippedCourses.length}` : ''}</span></div>
       <div class="calendar-bar"><span>${escapeHtml(calendarNote)}</span><button type="button" data-calendar-open>放假／调休</button></div>
@@ -494,7 +499,7 @@
       </div>
       ${state.notices.length ? `<div class="event-notices">${state.notices.map(n => `<div class="event-notice ${n.kind}"><span class="notice-dot"></span><span>${escapeHtml(n.text)}</span>${n.note ? `<small>${escapeHtml(n.note)}</small>` : ''}</div>`).join('')}</div>` : ''}
       ${state.actions ? `<div class="dashboard-actions">${state.actions}</div>` : ''}
-      ${skipCount ? `<div class="undo-bar"><button type="button" class="undo-trigger" id="undoTrigger">已跳过 ${skipCount} 节 · 单节撤销</button><button type="button" class="undo-all" data-undo-all>一键撤销全部旷课</button></div>` : ''}`;
+      ${state.live && skipCount ? `<div class="undo-bar"><button type="button" class="undo-trigger" id="undoTrigger">默认已翘 ${skipCount} 节 · 单节恢复</button><button type="button" class="undo-all" data-undo-all>恢复今日全部课程</button></div>` : ''}`;
     const parts = ['<div class="map-heading"><strong>当日时间图</strong><span>00:00–24:00 · 课程与健身房</span></div><div class="day-map-inner"><div class="map-axis">'];
     parts.push('<div class="day-endpoint first" style="top:0%">00:00</div><div class="day-endpoint last" style="top:100%">24:00</div>');
     for (let n = 1; n <= 12; n++) {
@@ -721,16 +726,16 @@
       }
       const trigger = event.target.closest('#undoTrigger');
       if (trigger) {
-        const hidden = rawCourses(selectedDay, selectedWeek).filter(course => skipped.has(skipKey(selectedDate(), course)));
-        trigger.outerHTML = `<div class="undo-choices">${hidden.map(course => `<button type="button" data-undo="${course._id}">撤销第${course.start}–${course.end}节跳过</button>`).join('')}</div>`;
+        const hidden = rawCourses(selectedDay, selectedWeek).filter(course => isSkipped(course, selectedDay, selectedWeek));
+        trigger.outerHTML = `<div class="undo-choices">${hidden.map(course => `<button type="button" data-undo="${course._id}">恢复第${course.start}–${course.end}节上课</button>`).join('')}</div>`;
         return;
       }
       const undoAll = event.target.closest('[data-undo-all]');
       if (undoAll) {
         refreshDailyState();
         if (dateKey(selectedDate()) !== dateKey(nowDate())) return;
-        skipped.clear();
-        persistSkipped();
+        for (const course of rawCourses(selectedDay, selectedWeek)) restored.add(skipKey(selectedDate(), course));
+        persistRestored();
         renderAll();
         return;
       }
@@ -951,7 +956,7 @@
     pushStatus('正在建立订阅…');
     try {
       const config = await pushRequest('/config');
-      const registration = await navigator.serviceWorker.register('./sw.js?v=26', { updateViaCache: 'none' });
+      const registration = await navigator.serviceWorker.register('./sw.js?v=27', { updateViaCache: 'none' });
       let subscription = await registration.pushManager.getSubscription();
       if (subscription) {
         const oldKey = subscription.options?.applicationServerKey;
@@ -1108,13 +1113,16 @@
     cloud.initialize({
       snapshot: () => ({
         sessions: gymStore.list(),
-        skips: [...skipped].map(key => Number(key.split(':').pop())).filter(Number.isInteger),
+        restores: [...restored].map(key => Number(key.split(':').pop())).filter(Number.isInteger),
         viewMode
       }),
       apply: state => {
         gymStore.replace(state.sessions);
-        skipped = new Set(state.skipDay === dateKey(nowDate()) ? state.skips.map(id => `${state.skipDay}:${id}`) : []);
-        writeStorage('neu-schedule-skipped-v7', JSON.stringify([...skipped]));
+        if (Array.isArray(state.restores)) {
+          restored = new Set(state.skipDay === dateKey(nowDate())
+            ? state.restores.map(id => `${state.skipDay}:${id}`) : []);
+          writeStorage(RESTORED_KEY, JSON.stringify([...restored]));
+        }
         if (state.calendar?.revision >= calendar.revision) calendar = state.calendar;
         if (!viewModeTouched && !new URLSearchParams(location.search).has('view') && ['week', 'day', 'gym'].includes(state.settings?.viewMode))
           viewMode = state.settings.viewMode;
@@ -1150,7 +1158,7 @@
     renderAll();
     initCloud();
     clearAttentionBadge();
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js?v=26', { updateViaCache: 'none' }).then(schedulePushSync).catch(() => {});
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js?v=27', { updateViaCache: 'none' }).then(schedulePushSync).catch(() => {});
     setInterval(() => {
       if (refreshDailyState()) { renderAll(); return; }
       renderHeader();
