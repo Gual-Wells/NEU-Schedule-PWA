@@ -45,3 +45,9 @@ jobs:
           cd worker
           pnpm test
           pnpm exec wrangler d1 migrations apply neu-schedule-push --local
+      - name: Build production Pages assets
+        run: |
+          node worker/gateway/build.mjs
+          test -s worker/gateway/dist/meeting-store.js
+          test -s worker/gateway/dist/app.js
+          test -s worker/gateway/dist/sw.js
