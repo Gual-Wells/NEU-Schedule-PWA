@@ -1,0 +1,53 @@
+name: Group meeting compatibility checks
+
+on:
+  push:
+    branches: [feature/group-meetings-lifecycle]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse browser and Worker modules
+        run: |
+          node --check app.js
+          node --check meeting-store.js
+          node --check gym-store.js
+          node --check cloud-sync.js
+          node --check bootstrap.js
+          node --check sw.js
+          node --check worker/src/index.js
+      - name: Existing and group meeting regression suite
+        run: |
+          node scripts/validate.mjs
+          node scripts/validate-ui.mjs
+          node scripts/validate-gym.mjs
+          node scripts/validate-cloud.mjs
+          node scripts/validate-login.mjs
+          node scripts/validate-push.mjs
+          node scripts/validate-calendar.mjs
+          node scripts/validate-meetings.mjs
+          node --test worker/test/course-state.test.mjs
+      - name: Install Worker dependencies
+        run: |
+          npm install --global pnpm@10
+          cd worker
+          pnpm install --frozen-lockfile
+      - name: Worker tests and local D1 migrations
+        run: |
+          cd worker
+          pnpm test
+          pnpm exec wrangler d1 migrations apply neu-schedule-push --local
+      - name: Build production Pages assets
+        run: |
+          node worker/gateway/build.mjs
+          test -s worker/gateway/dist/meeting-store.js
+          test -s worker/gateway/dist/app.js
+          test -s worker/gateway/dist/sw.js

@@ -8,6 +8,8 @@ const MAX_JOBS = 1800;
 const MAX_BODY = 180_000;
 const DAY = 86_400_000;
 const TEST_COOLDOWN = 10_000;
+const MEETING_MAX = 5 * 3600000;
+const validMeetingId = id => typeof id === 'string' && /^[A-Za-z0-9_-]{1,90}$/.test(id);
 
 function json(value, status = 200, extra = {}) {
   return new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', ...extra } });
@@ -70,13 +72,15 @@ function validSession(value) {
 
 async function readState(env) {
   const today = shanghaiDay();
-  const [sessions, skips, settings, calendar] = await Promise.all([
+  const [sessions, skips, settings, calendar, meetings] = await Promise.all([
     env.DB.prepare('SELECT id, start_at, end_at, closes_at, end_reason FROM gym_sessions ORDER BY start_at').all(),
     env.DB.prepare('SELECT course_ids FROM daily_skips WHERE day_key = ?').bind(today).first(),
     env.DB.prepare('SELECT content FROM app_settings WHERE id = 1').first(),
-    readCalendar(env)
+    readCalendar(env),
+    env.DB.prepare('SELECT id, start_at, end_at, end_reason, confirmed_at FROM group_meetings ORDER BY start_at').all()
   ]);
   return {
+    meetings: meetings.results.map(row => ({ id: row.id, startAt: row.start_at, endAt: row.end_at, endReason: row.end_reason, confirmedAt: row.confirmed_at })),
     sessions: sessions.results.map(row => ({ id: row.id, startAt: row.start_at, endAt: row.end_at, closesAt: row.closes_at, endReason: row.end_reason })),
     restores: skips ? decodeRestores(skips.course_ids) : [],
     skipDay: today,
@@ -90,6 +94,8 @@ async function commitState(input, env) {
   const now = Date.now();
   const today = shanghaiDay(now);
   const commands = [];
+  const pendingMeetings = [];
+  const meetingInsertPositions = [];
   for (const op of input.ops) {
     if (op.type === 'session-upsert' && validSession(op.session)) {
       const s = op.session;
@@ -101,13 +107,46 @@ async function commitState(input, env) {
       op.ids.every(id => Number.isInteger(id) && id >= 0 && id < 300)) {
       commands.push(env.DB.prepare('INSERT INTO daily_skips (day_key, course_ids, updated_at) VALUES (?, ?, ?) ON CONFLICT(day_key) DO UPDATE SET course_ids=excluded.course_ids, updated_at=excluded.updated_at')
         .bind(today, encodeRestores(op.ids), now));
+    } else if (op.type === 'meeting-create' && op.meeting && validMeetingId(op.meeting.id) &&
+      Number.isSafeInteger(op.meeting.startAt) && op.meeting.startAt > now - 7 * DAY &&
+      op.meeting.startAt < now + 370 * DAY) {
+      const m = op.meeting;
+      const existing = await env.DB.prepare('SELECT start_at FROM group_meetings WHERE id = ?').bind(m.id).first();
+      if (existing && existing.start_at !== m.startAt) return json({ error: '组会 ID 与云端记录冲突' }, 409);
+      if (!existing) {
+        const conflict = await env.DB.prepare(
+          'SELECT id FROM group_meetings WHERE start_at < ? AND COALESCE(end_at, start_at + ?) > ? LIMIT 1'
+        ).bind(m.startAt + MEETING_MAX, MEETING_MAX, m.startAt).first();
+        if (conflict || pendingMeetings.some(start =>
+          start < m.startAt + MEETING_MAX && m.startAt < start + MEETING_MAX))
+          return json({ error: '组会时间与云端已有安排重叠，请刷新后重新安排' }, 409);
+        pendingMeetings.push(m.startAt);
+      }
+      if (!existing) meetingInsertPositions.push(commands.length);
+      // The SQL predicate is evaluated during the write transaction; the
+      // preliminary check alone cannot prevent two devices racing to insert.
+      commands.push(env.DB.prepare(
+        'INSERT INTO group_meetings (id,start_at,end_at,end_reason,confirmed_at,created_at,updated_at) SELECT ?,?,NULL,NULL,NULL,?,? WHERE NOT EXISTS (SELECT 1 FROM group_meetings WHERE id <> ? AND start_at < ? AND COALESCE(end_at, start_at + ?) > ?) ON CONFLICT(id) DO NOTHING'
+      ).bind(m.id, m.startAt, now, now, m.id, m.startAt + MEETING_MAX, MEETING_MAX, m.startAt));
+    } else if (op.type === 'meeting-end' && validMeetingId(op.id) &&
+      Number.isSafeInteger(op.confirmedAt) && op.confirmedAt > 0 && op.confirmedAt <= now + 60000) {
+      commands.push(env.DB.prepare(
+        "UPDATE group_meetings SET end_at = MIN(?, start_at + ?), end_reason = CASE WHEN ? > start_at + ? THEN 'late' ELSE 'manual' END, confirmed_at = ?, updated_at = ? WHERE id = ? AND end_at IS NULL AND start_at <= ?"
+      ).bind(op.confirmedAt, MEETING_MAX, op.confirmedAt, MEETING_MAX, op.confirmedAt, now, op.id, op.confirmedAt));
+    } else if (op.type === 'meeting-cancel' && validMeetingId(op.id) &&
+      Number.isSafeInteger(op.cancelledAt) && op.cancelledAt <= now + 60000 && op.cancelledAt > 0) {
+      commands.push(env.DB.prepare(
+        'DELETE FROM group_meetings WHERE id = ? AND end_at IS NULL AND start_at > ?'
+      ).bind(op.id, op.cancelledAt));
     } else if (op.type === 'settings' && op.settings && ['week', 'day', 'gym'].includes(op.settings.viewMode) && Object.keys(op.settings).length === 1) {
       commands.push(env.DB.prepare('INSERT INTO app_settings (id, content, updated_at) VALUES (1, ?, ?) ON CONFLICT(id) DO UPDATE SET content=excluded.content, updated_at=excluded.updated_at')
         .bind(JSON.stringify(op.settings), now));
     } else return json({ error: '同步操作无效或日期已过' }, 400);
   }
   commands.push(env.DB.prepare('DELETE FROM daily_skips WHERE day_key < ?').bind(today));
-  await env.DB.batch(commands);
+  const written = await env.DB.batch(commands);
+  if (meetingInsertPositions.some(position => written[position]?.meta?.changes === 0))
+    return json({ error: '另一台设备刚刚安排了冲突组会，请刷新后重试' }, 409);
   return json({ ok: true, ...await readState(env) });
 }
 

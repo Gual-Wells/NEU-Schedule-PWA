@@ -53,6 +53,15 @@
   let activeDateKey = dateKey(nowDate());
   const cloud = window.CloudSync;
   const gymStore = window.GymStore.create(localStorage, (before, after) => cloud?.recordSessions(before, after));
+  const meetingStore = window.MeetingStore.create(localStorage, (before, after) => {
+    cloud?.recordMeetings(before, after);
+    schedulePushSync();
+  });
+  let meetingMessage = '';
+  const meetingTime = new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+  const meetingClock = timestamp => meetingTime.format(new Date(timestamp));
+  const meetingEnd = meeting => window.MeetingStore.occupiedEnd(meeting);
+  const meetingState = (meeting, at = Date.now()) => window.MeetingStore.state(meeting, at);
   let gymMessage = '';
   const activeGymSession = () => gymStore.active();
   const formatDuration = (ms, withSeconds = false) => {
@@ -158,7 +167,36 @@
       const time = periodTime(course);
       return [timeToMinutes(time.start), timeToMinutes(time.end)];
     });
+    const dayKey = dateKey(addDays(weekStart(week), day - 1));
+    const [dayStart, dayEnd] = window.MeetingStore.dayRange(dayKey);
+    for (const meeting of meetingStore.forDay(dayKey)) {
+      occupied.push([
+        Math.max(0, (meeting.startAt - dayStart) / 60000),
+        Math.min(1440, (meetingEnd(meeting) - dayStart) / 60000)
+      ]);
+    }
     return subtractIntervals(gymSlots(day, week), occupied);
+  }
+
+  function meetingBlock(meeting, dayKey, size) {
+    const [dayStart, dayEnd] = window.MeetingStore.dayRange(dayKey);
+    const from = Math.max(dayStart, meeting.startAt);
+    const until = Math.min(dayEnd, meetingEnd(meeting));
+    if (until <= from) return '';
+    const whole = until - from;
+    const expected = meeting.startAt + window.MeetingStore.EXPECTED;
+    const solid = Math.max(0, Math.min(until, expected) - from);
+    const extension = Math.max(0, whole - solid);
+    const finished = meeting.endAt !== null;
+    const status = meetingState(meeting);
+    const timeLabel = meetingClock(meeting.startAt) + '–' + meetingClock(meetingEnd(meeting));
+    const title = from === meeting.startAt ? '组会' : '组会·续';
+    return `<button class="${size === 'week' ? 'meeting-block meeting-week' : 'meeting-block meeting-day'} ${finished ? 'completed' : ''} ${status === 'capped' ? 'capped' : ''}" type="button"
+      data-meeting="${meeting.id}" aria-label="${title} ${timeLabel}" style="top:${pct((from - dayStart) / 60000)}%;height:${pct(whole / 60000) - pct(0)}%">
+      ${solid > 0 ? `<span class="meeting-solid" style="height:${solid / whole * 100}%"></span>` : ''}
+      ${extension > 0 ? `<span class="meeting-extension ${finished ? 'actual' : ''}" style="top:${solid / whole * 100}%;height:${extension / whole * 100}%"></span>` : ''}
+      <span class="meeting-copy"><strong>${title}</strong><small>${size === 'week' ? meetingClock(meeting.startAt) : timeLabel}</small></span>
+    </button>`;
   }
 
   function shortCourseName(name, span) {
@@ -215,8 +253,9 @@
       const day = i + 1;
       const date = addDays(start, i);
       const hasClass = rawCourses(day, selectedWeek).length > 0;
+      const hasMeeting = meetingStore.forDay(dateKey(date)).length > 0;
       const mark = dayMark(dateKey(date));
-      return `<button class="day-chip ${day === selectedDay ? 'selected' : ''} ${dateKey(date) === todayKey ? 'today' : ''} ${hasClass ? 'has-class' : ''}" data-day="${day}" data-mark="${mark?.label || ''}" data-kind="${mark?.kind || ''}" type="button">
+      return `<button class="day-chip ${day === selectedDay ? 'selected' : ''} ${dateKey(date) === todayKey ? 'today' : ''} ${hasClass ? 'has-class' : ''} ${hasMeeting ? 'has-meeting' : ''}" data-day="${day}" data-mark="${mark?.label || ''}" data-kind="${mark?.kind || ''}" type="button">
         <span class="dow">周${weekdayNames[day]}</span>
         <span class="dom">${date.getDate()}</span>
       </button>`;
@@ -309,6 +348,10 @@
         </button>`);
       }
 
+      const meetingDayKey = dateKey(addDays(weekMonday, day - 1));
+      for (const meeting of meetingStore.forDay(meetingDayKey))
+        pieces.push(meetingBlock(meeting, meetingDayKey, 'week'));
+
       if (dateKey(addDays(weekMonday, day - 1)) === dateKey(now)) {
         const currentMinutes = now.getHours() * 60 + now.getMinutes();
         if (currentMinutes >= DAY_START && currentMinutes <= DAY_END) {
@@ -334,6 +377,12 @@
       });
     });
 
+    $('timelineGrid').querySelectorAll('.meeting-block').forEach(button => {
+      button.addEventListener('click', event => {
+        event.stopPropagation();
+        openMeeting(button.dataset.meeting);
+      });
+    });
     $('timelineGrid').querySelectorAll('.course-block').forEach(button => {
       button.addEventListener('click', event => {
         event.stopPropagation();
@@ -441,7 +490,26 @@
     const freeNow = isInside(free, minute);
     const session = activeGymSession();
     const gymActive = Boolean(session);
+    const meeting = meetingStore.forDay(dateKey(date)).find(item =>
+      item.endAt === null && item.startAt <= now.getTime() &&
+      (now.getTime() < meetingEnd(item) || meetingState(item) === 'capped'));
+    if (meeting) {
+      const status = meetingState(meeting);
+      const capped = status === 'capped';
+      const elapsed = Math.min(now.getTime(), meetingEnd(meeting)) - meeting.startAt;
+      return { live, minute, title: capped ? '组会已达五小时上限' : '正在组会',
+        subtitle: capped ? '认定时长已截止 · 请确认结束' : '已进行 ' + formatDuration(elapsed),
+        notices: [{ kind: 'meeting', text: capped ? '五小时认定窗口已结束，真实结束时间未确认' :
+          '组会进行中 · 预计 ' + meetingClock(meeting.startAt + window.MeetingStore.EXPECTED) +
+          ' 结束，最晚认定到 ' + meetingClock(meetingEnd(meeting)) }],
+        actions: '<button type="button" class="action-button meeting-action" data-meeting-end="' + meeting.id + '">结束组会</button>' };
+    }
     const notices = [];
+    for (const upcoming of meetingStore.forDay(dateKey(date))) {
+      const remain = Math.ceil((upcoming.startAt - now.getTime()) / 60000);
+      if (upcoming.endAt === null && remain > 0 && remain <= 30)
+        notices.push({ kind: 'meeting', text: remain + ' 分钟后开始组会 · 预计三小时' });
+    }
     if (ongoing) {
       const end = timeToMinutes(periodTime(ongoing).end);
       notices.push({ kind: 'class', text: `正在上 ${ongoing.name} · ${ongoing.location}`, note: ongoing.note });
@@ -491,8 +559,8 @@
     const minuteAngle = now.getMinutes() * 6;
     const skipCount = courses.filter(course => isSkipped(course, selectedDay, selectedWeek)).length;
     $('dayDashboard').innerHTML = `
-      <div class="dashboard-date"><strong>${weekdayLong[selectedDay]} · ${fmtMD.format(date)}</strong><span>第 ${selectedWeek} 周 · ${courses.length} 段课程${skippedCourses.length ? ` · 已翘 ${skippedCourses.length}` : ''}</span></div>
-      <div class="calendar-bar"><span>${escapeHtml(calendarNote)}</span><button type="button" data-calendar-open>放假／调休</button></div>
+      <div class="dashboard-date"><strong>${weekdayLong[selectedDay]} · ${fmtMD.format(date)}</strong><span>第 ${selectedWeek} 周 · ${courses.length} 段课程${skippedCourses.length ? ` · 已翘 ${skippedCourses.length}` : ''}${meetingStore.forDay(key).length ? ` · 组会 ${meetingStore.forDay(key).length}` : ''}</span></div>
+      <div class="calendar-bar"><span>${escapeHtml(calendarNote)}</span><div class="calendar-bar-actions"><button type="button" data-meeting-open>安排组会</button><button type="button" data-calendar-open>放假／调休</button></div></div>
       <div class="now-row">
         <div class="clock" aria-label="当前时间 ${minutesToTime(now.getHours() * 60 + now.getMinutes())}"><i class="hand hour" style="--rotation:${hourAngle}deg"></i><i class="hand minute" style="--rotation:${minuteAngle}deg"></i><i class="clock-center"></i></div>
         <div class="now-text"><span class="clock-digital">${minutesToTime(now.getHours() * 60 + now.getMinutes())}</span><h2>${escapeHtml(state.title)}</h2><p>${escapeHtml(state.subtitle)}</p></div>
@@ -523,6 +591,8 @@
         <strong>${escapeHtml(course.name)}${skippedToday ? ' · 已翘' : ''}</strong><span>第${course.start}–${course.end}节 · ${t.start}–${t.end}</span><span>${escapeHtml(course.location)}${course.className ? ` · ${escapeHtml(course.className)}` : ''}${course.note ? ` · ${escapeHtml(course.note)}` : ''}</span>
       </button>`);
     }
+    for (const meeting of meetingStore.forDay(key))
+      parts.push(meetingBlock(meeting, key, 'day'));
     if (state.live && state.minute >= DAY_START && state.minute <= DAY_END)
       parts.push(`<div class="day-progress" style="height:${pct(state.minute)}%"></div><div class="day-now-line" style="top:${pct(state.minute)}%"><span>${minutesToTime(state.minute)}</span></div>`);
     parts.push('</div></div>');
@@ -533,6 +603,82 @@
         ? pct(state.minute) / 100 * panel.querySelector('.day-map-inner').getBoundingClientRect().height : 0;
       panel.scrollTop = Math.max(0, focus - panel.clientHeight * .55);
       dayFocus = false;
+    });
+  }
+
+  function meetingLabel(meeting) {
+    const status = meetingState(meeting);
+    if (status === 'completed') return meeting.endReason === 'late' ? '五小时截止 · 之后确认' : '已手动结束';
+    return { planned: '已安排', ongoing: '正在进行', extended: '弹性时段 · 进行中',
+      capped: '五小时认定已截止 · 尚未确认结束' }[status];
+  }
+  function openMeeting(id) {
+    const meeting = meetingStore.list().find(item => item.id === id);
+    if (!meeting) return;
+    $('meetingDetailDialog').dataset.meeting = id;
+    $('meetingDetailTitle').textContent = meetingLabel(meeting);
+    const startDay = new Date(meeting.startAt + 8 * 3600000).toISOString().slice(0, 10);
+    $('meetingDetailBody').innerHTML = [
+      detail('日期', startDay),
+      detail('开始时间', meetingClock(meeting.startAt)),
+      detail('预计三小时', meetingClock(meeting.startAt + window.MeetingStore.EXPECTED)),
+      detail('最长五小时', meetingClock(meetingEnd({ ...meeting, endAt: null }))),
+      detail('状态', meetingLabel(meeting), true),
+      ...(meeting.endAt !== null ? [detail('认定结束', meetingClock(meeting.endAt), true)] : [])
+    ].join('');
+    $('meetingDetailStatus').textContent = meeting.endReason === 'late'
+      ? '在五小时认定窗口之后才确认，实际结束时间未知；记录按五小时截断。'
+      : meeting.endAt === null ? '实线代表预计时间，虚线代表弹性窗口。组会不提供翘课操作。'
+      : '手动结束时间已保存，剩余预留窗口已释放。';
+    $('meetingEndButton').hidden = meeting.endAt !== null || Date.now() < meeting.startAt;
+    $('meetingCancelButton').hidden = meeting.endAt !== null || Date.now() >= meeting.startAt;
+    if (!$('meetingDetailDialog').open) $('meetingDetailDialog').showModal();
+  }
+  function openMeetingPlan() {
+    const preferred = dateKey(selectedDate());
+    const today = dateKey(nowDate());
+    $('meetingPlanDate').min = today;
+    $('meetingPlanDate').max = dateKey(addDays(weekStart(D.semester.totalWeeks), 6));
+    $('meetingPlanDate').value = preferred >= today ? preferred : today;
+    $('meetingPlanStatus').textContent = '';
+    $('meetingPlanDialog').showModal();
+  }
+  function setupMeetings() {
+    $('closeMeetingPlan').addEventListener('click', () => $('meetingPlanDialog').close());
+    $('closeMeetingDetail').addEventListener('click', () => $('meetingDetailDialog').close());
+    $('meetingPlanForm').addEventListener('submit', event => {
+      event.preventDefault();
+      try {
+        const [year, month, day] = $('meetingPlanDate').value.split('-').map(Number);
+        const [hour, minute] = $('meetingPlanTime').value.split(':').map(Number);
+        if (![year, month, day, hour, minute].every(Number.isInteger) || hour > 23 || minute > 59)
+          throw new Error('请填写有效日期和时间。');
+        const timestamp = Date.UTC(year, month - 1, day, hour - 8, minute);
+        if (new Date(timestamp + 8 * 3600000).toISOString().slice(0, 10) !== $('meetingPlanDate').value)
+          throw new Error('无效日期，请重新选择。');
+        const item = meetingStore.plan(timestamp);
+        meetingMessage = '组会已安排，正在同步云端。';
+        $('meetingPlanDialog').close();
+        renderAll();
+        openMeeting(item.id);
+      } catch (error) { $('meetingPlanStatus').textContent = error.message; }
+    });
+    $('meetingEndButton').addEventListener('click', () => {
+      const id = $('meetingDetailDialog').dataset.meeting;
+      try {
+        meetingStore.stop(id);
+        meetingMessage = '组会结束时间已记录。';
+        renderAll();
+        openMeeting(id);
+      } catch (error) { $('meetingDetailStatus').textContent = error.message; }
+    });
+    $('meetingCancelButton').addEventListener('click', () => {
+      try {
+        meetingStore.cancel($('meetingDetailDialog').dataset.meeting);
+        meetingMessage = '未开始的组会已取消。';
+        $('meetingDetailDialog').close();
+        renderAll();
+      } catch (error) { $('meetingDetailStatus').textContent = error.message; }
     });
   }
 
@@ -707,10 +853,19 @@
       if (changed) $('courseDialog').close();
     });
     $('dayMap').addEventListener('click', event => {
+      const meeting = event.target.closest('[data-meeting]');
+      if (meeting) { openMeeting(meeting.dataset.meeting); return; }
       const button = event.target.closest('[data-course]');
       if (button) openCourse(Number(button.dataset.course));
     });
     $('dayDashboard').addEventListener('click', event => {
+      if (event.target.closest('[data-meeting-open]')) { openMeetingPlan(); return; }
+      const endMeeting = event.target.closest('[data-meeting-end]');
+      if (endMeeting) {
+        try { meetingStore.stop(endMeeting.dataset.meetingEnd); meetingMessage = '组会已结束。'; renderAll(); }
+        catch (error) { meetingMessage = error.message; renderAll(); }
+        return;
+      }
       if (event.target.closest('[data-calendar-open]')) { openCalendarDialog(); return; }
       const skip = event.target.closest('[data-skip]');
       if (skip) {
@@ -850,6 +1005,8 @@
     renderHeader();
     renderWeekCard();
     renderPanels();
+    if ($('meetingDetailDialog').open && $('meetingDetailDialog').dataset.meeting)
+      openMeeting($('meetingDetailDialog').dataset.meeting);
   }
 
   const pushBase = () => String(window.PUSH_API_BASE || '').replace(/\/$/, '');
@@ -925,6 +1082,17 @@
         });
       }
     }
+    for (const meeting of meetingStore.list()) {
+      if (meeting.endAt !== null) continue;
+      const planned = [
+        ['p30', meeting.startAt - 30 * 60000, '30 分钟后组会', '组会预计三小时，弹性窗口最多五小时'],
+        ['p5', meeting.startAt - 5 * 60000, '5 分钟后组会', '打开课表查看组会日程'],
+        ['expected', meeting.startAt + window.MeetingStore.EXPECTED, '组会预计时间已到', '如仍在组会，后续两小时属于弹性时段'],
+        ['limit', meeting.startAt + window.MeetingStore.MAXIMUM, '组会五小时上限已到', '如尚未结束，请打开课表确认组会结束']
+      ];
+      for (const [suffix, dueAt, title, body] of planned)
+        if (dueAt > now + 5000) jobs.push({ id: 'meeting-' + meeting.id + '-' + suffix, dueAt, title, body, ttl: 900 });
+    }
     return jobs.sort((a, b) => a.dueAt - b.dueAt || a.id.localeCompare(b.id));
   }
   async function syncPush() {
@@ -956,7 +1124,7 @@
     pushStatus('正在建立订阅…');
     try {
       const config = await pushRequest('/config');
-      const registration = await navigator.serviceWorker.register('./sw.js?v=27', { updateViaCache: 'none' });
+      const registration = await navigator.serviceWorker.register('./sw.js?v=28', { updateViaCache: 'none' });
       let subscription = await registration.pushManager.getSubscription();
       if (subscription) {
         const oldKey = subscription.options?.applicationServerKey;
@@ -1113,11 +1281,13 @@
     cloud.initialize({
       snapshot: () => ({
         sessions: gymStore.list(),
+        meetings: meetingStore.list(),
         restores: [...restored].map(key => Number(key.split(':').pop())).filter(Number.isInteger),
         viewMode
       }),
       apply: state => {
         gymStore.replace(state.sessions);
+        meetingStore.replace(state.meetings || []);
         if (Array.isArray(state.restores)) {
           restored = new Set(state.skipDay === dateKey(nowDate())
             ? state.restores.map(id => `${state.skipDay}:${id}`) : []);
@@ -1135,6 +1305,7 @@
 
   function boot() {
     setupInteractions();
+    setupMeetings();
     setupCalendar();
     setupPush();
     $('cloudButton').addEventListener('click', () => {
@@ -1165,6 +1336,8 @@
       if (viewMode === 'week') renderWeekView();
       else if (viewMode === 'day') renderDayView();
       else renderGymView();
+      if ($('meetingDetailDialog').open && $('meetingDetailDialog').dataset.meeting)
+        openMeeting($('meetingDetailDialog').dataset.meeting);
     }, 60000);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) { clearAttentionBadge(); renderAll(); cloud?.sync().catch(() => {}); schedulePushSync(); } });
     window.addEventListener('focus', () => { clearAttentionBadge(); renderAll(); cloud?.sync().catch(() => {}); schedulePushSync(); });
