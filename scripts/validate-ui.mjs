@@ -42,7 +42,7 @@ const sandbox = {
     CloudSync: {
       initialize({ apply }) { remoteApply = apply; return Promise.resolve(); },
       connected() { return true; },
-      recordSessions() {}, recordRestores() {}, recordSettings() {},
+      recordSessions() {}, recordMeetings() {}, recordRestores() {}, recordSettings() {},
       sync() { return Promise.resolve(); }
     }
   },
@@ -64,7 +64,7 @@ const sandbox = {
   console
 };
 vm.createContext(sandbox);
-for (const file of ['data.js', 'gym-store.js', 'app.js'])
+for (const file of ['data.js', 'gym-store.js', 'meeting-store.js', 'app.js'])
   vm.runInContext(fs.readFileSync(new URL(`../${file}`, import.meta.url), 'utf8'), sandbox, { filename: file });
 assert.equal(store.get('neu-schedule-restored-v1'), '[]', 'old-day restores clear on startup');
 
