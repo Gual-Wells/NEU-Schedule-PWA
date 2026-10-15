@@ -53,6 +53,15 @@
   let activeDateKey = dateKey(nowDate());
   const cloud = window.CloudSync;
   const gymStore = window.GymStore.create(localStorage, (before, after) => cloud?.recordSessions(before, after));
+  const meetingStore = window.MeetingStore.create(localStorage, (before, after) => {
+    cloud?.recordMeetings(before, after);
+    schedulePushSync();
+  });
+  let meetingMessage = '';
+  const meetingTime = new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+  const meetingClock = timestamp => meetingTime.format(new Date(timestamp));
+  const meetingEnd = meeting => window.MeetingStore.occupiedEnd(meeting);
+  const meetingState = (meeting, at = Date.now()) => window.MeetingStore.state(meeting, at);
   let gymMessage = '';
   const activeGymSession = () => gymStore.active();
   const formatDuration = (ms, withSeconds = false) => {
@@ -158,7 +167,36 @@
       const time = periodTime(course);
       return [timeToMinutes(time.start), timeToMinutes(time.end)];
     });
+    const dayKey = dateKey(addDays(weekStart(week), day - 1));
+    const [dayStart, dayEnd] = window.MeetingStore.dayRange(dayKey);
+    for (const meeting of meetingStore.forDay(dayKey)) {
+      occupied.push([
+        Math.max(0, (meeting.startAt - dayStart) / 60000),
+        Math.min(1440, (meetingEnd(meeting) - dayStart) / 60000)
+      ]);
+    }
     return subtractIntervals(gymSlots(day, week), occupied);
+  }
+
+  function meetingBlock(meeting, dayKey, size) {
+    const [dayStart, dayEnd] = window.MeetingStore.dayRange(dayKey);
+    const from = Math.max(dayStart, meeting.startAt);
+    const until = Math.min(dayEnd, meetingEnd(meeting));
+    if (until <= from) return '';
+    const whole = until - from;
+    const expected = meeting.startAt + window.MeetingStore.EXPECTED;
+    const solid = Math.max(0, Math.min(until, expected) - from);
+    const extension = Math.max(0, whole - solid);
+    const finished = meeting.endAt !== null;
+    const status = meetingState(meeting);
+    const timeLabel = meetingClock(meeting.startAt) + '–' + meetingClock(meetingEnd(meeting));
+    const title = from === meeting.startAt ? '组会' : '组会·续';
+    return `<button class="${size === 'week' ? 'meeting-block meeting-week' : 'meeting-block meeting-day'} ${finished ? 'completed' : ''} ${status === 'capped' ? 'capped' : ''}" type="button"
+      data-meeting="${meeting.id}" aria-label="${title} ${timeLabel}" style="top:${pct((from - dayStart) / 60000)}%;height:${pct(whole / 60000) - pct(0)}%">
+      ${solid > 0 ? `<span class="meeting-solid" style="height:${solid / whole * 100}%"></span>` : ''}
+      ${extension > 0 ? `<span class="meeting-extension ${finished ? 'actual' : ''}" style="top:${solid / whole * 100}%;height:${extension / whole * 100}%"></span>` : ''}
+      <span class="meeting-copy"><strong>${title}</strong><small>${size === 'week' ? meetingClock(meeting.startAt) : timeLabel}</small></span>
+    </button>`;
   }
 
   function shortCourseName(name, span) {
