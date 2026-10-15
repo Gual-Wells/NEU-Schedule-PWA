@@ -348,8 +348,9 @@
         </button>`);
       }
 
-      for (const meeting of meetingStore.forDay(dateKey(date)))
-        pieces.push(meetingBlock(meeting, dateKey(date), 'week'));
+      const meetingDayKey = dateKey(addDays(weekMonday, day - 1));
+      for (const meeting of meetingStore.forDay(meetingDayKey))
+        pieces.push(meetingBlock(meeting, meetingDayKey, 'week'));
 
       if (dateKey(addDays(weekMonday, day - 1)) === dateKey(now)) {
         const currentMinutes = now.getHours() * 60 + now.getMinutes();
