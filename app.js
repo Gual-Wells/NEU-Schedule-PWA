@@ -638,6 +638,7 @@
     const preferred = dateKey(selectedDate());
     const today = dateKey(nowDate());
     $('meetingPlanDate').min = today;
+    $('meetingPlanDate').max = dateKey(addDays(weekStart(D.semester.totalWeeks), 6));
     $('meetingPlanDate').value = preferred >= today ? preferred : today;
     $('meetingPlanStatus').textContent = '';
     $('meetingPlanDialog').showModal();
