@@ -605,6 +605,81 @@
     });
   }
 
+  function meetingLabel(meeting) {
+    const status = meetingState(meeting);
+    if (status === 'completed') return meeting.endReason === 'late' ? '五小时截止 · 之后确认' : '已手动结束';
+    return { planned: '已安排', ongoing: '正在进行', extended: '弹性时段 · 进行中',
+      capped: '五小时认定已截止 · 尚未确认结束' }[status];
+  }
+  function openMeeting(id) {
+    const meeting = meetingStore.list().find(item => item.id === id);
+    if (!meeting) return;
+    $('meetingDetailDialog').dataset.meeting = id;
+    $('meetingDetailTitle').textContent = meetingLabel(meeting);
+    const startDay = new Date(meeting.startAt + 8 * 3600000).toISOString().slice(0, 10);
+    $('meetingDetailBody').innerHTML = [
+      detail('日期', startDay),
+      detail('开始时间', meetingClock(meeting.startAt)),
+      detail('预计三小时', meetingClock(meeting.startAt + window.MeetingStore.EXPECTED)),
+      detail('最长五小时', meetingClock(meetingEnd({ ...meeting, endAt: null }))),
+      detail('状态', meetingLabel(meeting), true),
+      ...(meeting.endAt !== null ? [detail('认定结束', meetingClock(meeting.endAt), true)] : [])
+    ].join('');
+    $('meetingDetailStatus').textContent = meeting.endReason === 'late'
+      ? '在五小时认定窗口之后才确认，实际结束时间未知；记录按五小时截断。'
+      : meeting.endAt === null ? '实线代表预计时间，虚线代表弹性窗口。组会不提供翘课操作。'
+      : '手动结束时间已保存，剩余预留窗口已释放。';
+    $('meetingEndButton').hidden = meeting.endAt !== null || Date.now() < meeting.startAt;
+    $('meetingCancelButton').hidden = meeting.endAt !== null || Date.now() >= meeting.startAt;
+    if (!$('meetingDetailDialog').open) $('meetingDetailDialog').showModal();
+  }
+  function openMeetingPlan() {
+    const preferred = dateKey(selectedDate());
+    const today = dateKey(nowDate());
+    $('meetingPlanDate').min = today;
+    $('meetingPlanDate').value = preferred >= today ? preferred : today;
+    $('meetingPlanStatus').textContent = '';
+    $('meetingPlanDialog').showModal();
+  }
+  function setupMeetings() {
+    $('closeMeetingPlan').addEventListener('click', () => $('meetingPlanDialog').close());
+    $('closeMeetingDetail').addEventListener('click', () => $('meetingDetailDialog').close());
+    $('meetingPlanForm').addEventListener('submit', event => {
+      event.preventDefault();
+      try {
+        const [year, month, day] = $('meetingPlanDate').value.split('-').map(Number);
+        const [hour, minute] = $('meetingPlanTime').value.split(':').map(Number);
+        if (![year, month, day, hour, minute].every(Number.isInteger) || hour > 23 || minute > 59)
+          throw new Error('请填写有效日期和时间。');
+        const timestamp = Date.UTC(year, month - 1, day, hour - 8, minute);
+        if (new Date(timestamp + 8 * 3600000).toISOString().slice(0, 10) !== $('meetingPlanDate').value)
+          throw new Error('无效日期，请重新选择。');
+        const item = meetingStore.plan(timestamp);
+        meetingMessage = '组会已安排，正在同步云端。';
+        $('meetingPlanDialog').close();
+        renderAll();
+        openMeeting(item.id);
+      } catch (error) { $('meetingPlanStatus').textContent = error.message; }
+    });
+    $('meetingEndButton').addEventListener('click', () => {
+      const id = $('meetingDetailDialog').dataset.meeting;
+      try {
+        meetingStore.stop(id);
+        meetingMessage = '组会结束时间已记录。';
+        renderAll();
+        openMeeting(id);
+      } catch (error) { $('meetingDetailStatus').textContent = error.message; }
+    });
+    $('meetingCancelButton').addEventListener('click', () => {
+      try {
+        meetingStore.cancel($('meetingDetailDialog').dataset.meeting);
+        meetingMessage = '未开始的组会已取消。';
+        $('meetingDetailDialog').close();
+        renderAll();
+      } catch (error) { $('meetingDetailStatus').textContent = error.message; }
+    });
+  }
+
   function openCourse(id, day = selectedDay) {
     const course = D.courses.find(item => item._id === id);
     if (!course) return;
@@ -776,10 +851,19 @@
       if (changed) $('courseDialog').close();
     });
     $('dayMap').addEventListener('click', event => {
+      const meeting = event.target.closest('[data-meeting]');
+      if (meeting) { openMeeting(meeting.dataset.meeting); return; }
       const button = event.target.closest('[data-course]');
       if (button) openCourse(Number(button.dataset.course));
     });
     $('dayDashboard').addEventListener('click', event => {
+      if (event.target.closest('[data-meeting-open]')) { openMeetingPlan(); return; }
+      const endMeeting = event.target.closest('[data-meeting-end]');
+      if (endMeeting) {
+        try { meetingStore.stop(endMeeting.dataset.meetingEnd); meetingMessage = '组会已结束。'; renderAll(); }
+        catch (error) { meetingMessage = error.message; renderAll(); }
+        return;
+      }
       if (event.target.closest('[data-calendar-open]')) { openCalendarDialog(); return; }
       const skip = event.target.closest('[data-skip]');
       if (skip) {
@@ -994,6 +1078,17 @@
         });
       }
     }
+    for (const meeting of meetingStore.list()) {
+      if (meeting.endAt !== null) continue;
+      const planned = [
+        ['p30', meeting.startAt - 30 * 60000, '30 分钟后组会', '组会预计三小时，弹性窗口最多五小时'],
+        ['p5', meeting.startAt - 5 * 60000, '5 分钟后组会', '打开课表查看组会日程'],
+        ['expected', meeting.startAt + window.MeetingStore.EXPECTED, '组会预计时间已到', '如仍在组会，后续两小时属于弹性时段'],
+        ['limit', meeting.startAt + window.MeetingStore.MAXIMUM, '组会五小时上限已到', '如尚未结束，请打开课表确认组会结束']
+      ];
+      for (const [suffix, dueAt, title, body] of planned)
+        if (dueAt > now + 5000) jobs.push({ id: 'meeting-' + meeting.id + '-' + suffix, dueAt, title, body, ttl: 900 });
+    }
     return jobs.sort((a, b) => a.dueAt - b.dueAt || a.id.localeCompare(b.id));
   }
   async function syncPush() {
@@ -1182,11 +1277,13 @@
     cloud.initialize({
       snapshot: () => ({
         sessions: gymStore.list(),
+        meetings: meetingStore.list(),
         restores: [...restored].map(key => Number(key.split(':').pop())).filter(Number.isInteger),
         viewMode
       }),
       apply: state => {
         gymStore.replace(state.sessions);
+        meetingStore.replace(state.meetings || []);
         if (Array.isArray(state.restores)) {
           restored = new Set(state.skipDay === dateKey(nowDate())
             ? state.restores.map(id => `${state.skipDay}:${id}`) : []);
@@ -1204,6 +1301,7 @@
 
   function boot() {
     setupInteractions();
+    setupMeetings();
     setupCalendar();
     setupPush();
     $('cloudButton').addEventListener('click', () => {
