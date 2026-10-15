@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 
 const dataSource = fs.readFileSync(new URL('../data.js', import.meta.url), 'utf8');
 const gymSource = fs.readFileSync(new URL('../gym-store.js', import.meta.url), 'utf8');
+const meetingSource = fs.readFileSync(new URL('../meeting-store.js', import.meta.url), 'utf8');
 const appSource = fs.readFileSync(new URL('../app.js', import.meta.url), 'utf8').replace(/  boot\(\);\s*\}\)\(\);\s*$/, '  window.__test = { buildPushJobs, gymSlots };\n})();');
 assert.notEqual(appSource, fs.readFileSync(new URL('../app.js', import.meta.url), 'utf8'), 'test hook must replace boot');
 const at = new Date(2026, 9, 6, 12, 0);
@@ -17,6 +18,7 @@ function makeModel(restores) {
   const context = vm.createContext({ window, localStorage, location: { search: '' }, URLSearchParams, Date: FixedDate, Intl, setTimeout, clearTimeout });
   vm.runInContext(dataSource, context);
   vm.runInContext(gymSource, context);
+  vm.runInContext(meetingSource, context);
   vm.runInContext(appSource, context);
   return window.__test;
 }
