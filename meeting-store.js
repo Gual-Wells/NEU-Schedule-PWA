@@ -24,8 +24,8 @@
   const occupiedEnd = meeting => meeting.endAt ?? meeting.startAt + MAXIMUM;
   function dayRange(dayKey) {
     const [year, month, day] = dayKey.split('-').map(Number);
-    const start = new Date(year, month - 1, day).getTime();
-    return [start, new Date(year, month - 1, day + 1).getTime()];
+    const start = Date.UTC(year, month - 1, day, -8);
+    return [start, Date.UTC(year, month - 1, day + 1, -8)];
   }
   function overlaps(aStart, aEnd, bStart, bEnd) {
     return aStart < bEnd && bStart < aEnd;
