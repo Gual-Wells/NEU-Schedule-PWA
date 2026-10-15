@@ -95,6 +95,7 @@ async function commitState(input, env) {
   const today = shanghaiDay(now);
   const commands = [];
   const pendingMeetings = [];
+  const meetingInsertPositions = [];
   for (const op of input.ops) {
     if (op.type === 'session-upsert' && validSession(op.session)) {
       const s = op.session;
@@ -121,9 +122,12 @@ async function commitState(input, env) {
           return json({ error: '组会时间与云端已有安排重叠，请刷新后重新安排' }, 409);
         pendingMeetings.push(m.startAt);
       }
+      if (!existing) meetingInsertPositions.push(commands.length);
+      // The SQL predicate is evaluated during the write transaction; the
+      // preliminary check alone cannot prevent two devices racing to insert.
       commands.push(env.DB.prepare(
-        'INSERT INTO group_meetings (id,start_at,end_at,end_reason,confirmed_at,created_at,updated_at) VALUES (?,?,NULL,NULL,NULL,?,?) ON CONFLICT(id) DO NOTHING'
-      ).bind(m.id, m.startAt, now, now));
+        'INSERT INTO group_meetings (id,start_at,end_at,end_reason,confirmed_at,created_at,updated_at) SELECT ?,?,NULL,NULL,NULL,?,? WHERE NOT EXISTS (SELECT 1 FROM group_meetings WHERE id <> ? AND start_at < ? AND COALESCE(end_at, start_at + ?) > ?) ON CONFLICT(id) DO NOTHING'
+      ).bind(m.id, m.startAt, now, now, m.id, m.startAt + MEETING_MAX, MEETING_MAX, m.startAt));
     } else if (op.type === 'meeting-end' && validMeetingId(op.id) &&
       Number.isSafeInteger(op.confirmedAt) && op.confirmedAt > 0 && op.confirmedAt <= now + 60000) {
       commands.push(env.DB.prepare(
@@ -140,7 +144,9 @@ async function commitState(input, env) {
     } else return json({ error: '同步操作无效或日期已过' }, 400);
   }
   commands.push(env.DB.prepare('DELETE FROM daily_skips WHERE day_key < ?').bind(today));
-  await env.DB.batch(commands);
+  const written = await env.DB.batch(commands);
+  if (meetingInsertPositions.some(position => written[position]?.meta?.changes === 0))
+    return json({ error: '另一台设备刚刚安排了冲突组会，请刷新后重试' }, 409);
   return json({ ok: true, ...await readState(env) });
 }
 
