@@ -27,6 +27,7 @@ jobs:
         run: |
           node --check app.js
           node --check gym-store.js
+          node --check meeting-store.js
           node --check cloud-sync.js
           node --check bootstrap.js
           node --check auth-client.js
@@ -34,6 +35,7 @@ jobs:
           node scripts/validate.mjs
           node scripts/validate-ui.mjs
           node scripts/validate-gym.mjs
+          node scripts/validate-meetings.mjs
           node scripts/validate-cloud.mjs
           node scripts/validate-login.mjs
           node scripts/validate-push.mjs
