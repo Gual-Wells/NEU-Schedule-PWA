@@ -48,7 +48,7 @@ assert.equal(M.state(ended, start + 7 * 3600000), 'completed');
 assert.equal(JSON.stringify(model.dayFreeWindows(3, 7)),
   JSON.stringify([[420, 840], [990, 1240]]), 'manual ending releases remaining gym time');
 assert.equal(model.buildPushJobs().filter(job => job.id.startsWith('meeting-')).length, 0);
-assert.throws(() => meetingStore.cancel(first.id, at), /只能取消/);
+assert.throws(() => model.meetingStore.cancel(first.id, at), /只能取消/);
 const refreshed = M.create(storage);
 assert.equal(refreshed.list()[0].endAt, ended.endAt, 'manual end survives reload');
 assert.equal(refreshed.stop(first.id, start + 4 * 3600000).endAt, ended.endAt, 'end is immutable');
