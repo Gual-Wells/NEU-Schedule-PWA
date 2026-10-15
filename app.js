@@ -1004,6 +1004,8 @@
     renderHeader();
     renderWeekCard();
     renderPanels();
+    if ($('meetingDetailDialog').open && $('meetingDetailDialog').dataset.meeting)
+      openMeeting($('meetingDetailDialog').dataset.meeting);
   }
 
   const pushBase = () => String(window.PUSH_API_BASE || '').replace(/\/$/, '');
@@ -1121,7 +1123,7 @@
     pushStatus('正在建立订阅…');
     try {
       const config = await pushRequest('/config');
-      const registration = await navigator.serviceWorker.register('./sw.js?v=27', { updateViaCache: 'none' });
+      const registration = await navigator.serviceWorker.register('./sw.js?v=28', { updateViaCache: 'none' });
       let subscription = await registration.pushManager.getSubscription();
       if (subscription) {
         const oldKey = subscription.options?.applicationServerKey;
@@ -1333,6 +1335,8 @@
       if (viewMode === 'week') renderWeekView();
       else if (viewMode === 'day') renderDayView();
       else renderGymView();
+      if ($('meetingDetailDialog').open && $('meetingDetailDialog').dataset.meeting)
+        openMeeting($('meetingDetailDialog').dataset.meeting);
     }, 60000);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) { clearAttentionBadge(); renderAll(); cloud?.sync().catch(() => {}); schedulePushSync(); } });
     window.addEventListener('focus', () => { clearAttentionBadge(); renderAll(); cloud?.sync().catch(() => {}); schedulePushSync(); });
