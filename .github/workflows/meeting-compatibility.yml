@@ -35,3 +35,13 @@ jobs:
           node scripts/validate-calendar.mjs
           node scripts/validate-meetings.mjs
           node --test worker/test/course-state.test.mjs
+      - name: Install Worker dependencies
+        run: |
+          npm install --global pnpm@10
+          cd worker
+          pnpm install --frozen-lockfile
+      - name: Worker tests and local D1 migrations
+        run: |
+          cd worker
+          pnpm test
+          pnpm exec wrangler d1 migrations apply neu-schedule-push --local
