@@ -28,7 +28,7 @@ assert.equal(meetingStore.forDay('2026-10-14').length, 1);
 assert.throws(() => meetingStore.plan(start + 2 * 3600000, at), /重叠/);
 
 const app = read('app.js').replace(/  boot\(\);\s*\}\)\(\);\s*$/,
-  '  window.__meetTest = { dayFreeWindows, meetingBlock, buildPushJobs };\n})();');
+  '  window.__meetTest = { dayFreeWindows, meetingBlock, buildPushJobs, meetingStore };\n})();');
 assert.notEqual(app, read('app.js'), 'test hook should replace frontend bootstrap');
 vm.runInContext(app, root);
 const model = root.window.__meetTest;
@@ -42,7 +42,7 @@ const plans = model.buildPushJobs().filter(job => job.id.startsWith('meeting-'))
 assert.equal(plans.length, 4, 'group meeting produces four distinct future reminder points');
 assert.equal(new Set(plans.map(x => x.id)).size, 4);
 
-const ended = meetingStore.stop(first.id, start + 2.5 * 3600000);
+const ended = model.meetingStore.stop(first.id, start + 2.5 * 3600000);
 assert.equal(ended.endReason, 'manual');
 assert.equal(M.state(ended, start + 7 * 3600000), 'completed');
 assert.equal(JSON.stringify(model.dayFreeWindows(3, 7)),
