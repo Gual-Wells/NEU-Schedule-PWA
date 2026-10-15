@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 
 const dataSource = fs.readFileSync(new URL('../data.js', import.meta.url), 'utf8');
 const gymSource = fs.readFileSync(new URL('../gym-store.js', import.meta.url), 'utf8');
+const meetingSource = fs.readFileSync(new URL('../meeting-store.js', import.meta.url), 'utf8');
 const original = fs.readFileSync(new URL('../app.js', import.meta.url), 'utf8');
 const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const sw = fs.readFileSync(new URL('../sw.js', import.meta.url), 'utf8');
@@ -24,6 +25,7 @@ function model(calendar, restores = []) {
   const context = vm.createContext({ window, localStorage, location: { search: '' }, URLSearchParams, Date: FixedDate, Intl, setTimeout, clearTimeout });
   vm.runInContext(dataSource, context);
   vm.runInContext(gymSource, context);
+  vm.runInContext(meetingSource, context);
   vm.runInContext(appSource, context);
   return window.__test;
 }
