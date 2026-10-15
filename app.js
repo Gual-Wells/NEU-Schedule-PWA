@@ -253,8 +253,9 @@
       const day = i + 1;
       const date = addDays(start, i);
       const hasClass = rawCourses(day, selectedWeek).length > 0;
+      const hasMeeting = meetingStore.forDay(dateKey(date)).length > 0;
       const mark = dayMark(dateKey(date));
-      return `<button class="day-chip ${day === selectedDay ? 'selected' : ''} ${dateKey(date) === todayKey ? 'today' : ''} ${hasClass ? 'has-class' : ''}" data-day="${day}" data-mark="${mark?.label || ''}" data-kind="${mark?.kind || ''}" type="button">
+      return `<button class="day-chip ${day === selectedDay ? 'selected' : ''} ${dateKey(date) === todayKey ? 'today' : ''} ${hasClass ? 'has-class' : ''} ${hasMeeting ? 'has-meeting' : ''}" data-day="${day}" data-mark="${mark?.label || ''}" data-kind="${mark?.kind || ''}" type="button">
         <span class="dow">周${weekdayNames[day]}</span>
         <span class="dom">${date.getDate()}</span>
       </button>`;
@@ -347,6 +348,9 @@
         </button>`);
       }
 
+      for (const meeting of meetingStore.forDay(dateKey(date)))
+        pieces.push(meetingBlock(meeting, dateKey(date), 'week'));
+
       if (dateKey(addDays(weekMonday, day - 1)) === dateKey(now)) {
         const currentMinutes = now.getHours() * 60 + now.getMinutes();
         if (currentMinutes >= DAY_START && currentMinutes <= DAY_END) {
@@ -372,6 +376,12 @@
       });
     });
 
+    $('timelineGrid').querySelectorAll('.meeting-block').forEach(button => {
+      button.addEventListener('click', event => {
+        event.stopPropagation();
+        openMeeting(button.dataset.meeting);
+      });
+    });
     $('timelineGrid').querySelectorAll('.course-block').forEach(button => {
       button.addEventListener('click', event => {
         event.stopPropagation();
@@ -479,7 +489,26 @@
     const freeNow = isInside(free, minute);
     const session = activeGymSession();
     const gymActive = Boolean(session);
+    const meeting = meetingStore.forDay(dateKey(date)).find(item =>
+      item.endAt === null && item.startAt <= now.getTime() &&
+      (now.getTime() < meetingEnd(item) || meetingState(item) === 'capped'));
+    if (meeting) {
+      const status = meetingState(meeting);
+      const capped = status === 'capped';
+      const elapsed = Math.min(now.getTime(), meetingEnd(meeting)) - meeting.startAt;
+      return { live, minute, title: capped ? '组会已达五小时上限' : '正在组会',
+        subtitle: capped ? '认定时长已截止 · 请确认结束' : '已进行 ' + formatDuration(elapsed),
+        notices: [{ kind: 'meeting', text: capped ? '五小时认定窗口已结束，真实结束时间未确认' :
+          '组会进行中 · 预计 ' + meetingClock(meeting.startAt + window.MeetingStore.EXPECTED) +
+          ' 结束，最晚认定到 ' + meetingClock(meetingEnd(meeting)) }],
+        actions: '<button type="button" class="action-button meeting-action" data-meeting-end="' + meeting.id + '">结束组会</button>' };
+    }
     const notices = [];
+    for (const upcoming of meetingStore.forDay(dateKey(date))) {
+      const remain = Math.ceil((upcoming.startAt - now.getTime()) / 60000);
+      if (upcoming.endAt === null && remain > 0 && remain <= 30)
+        notices.push({ kind: 'meeting', text: remain + ' 分钟后开始组会 · 预计三小时' });
+    }
     if (ongoing) {
       const end = timeToMinutes(periodTime(ongoing).end);
       notices.push({ kind: 'class', text: `正在上 ${ongoing.name} · ${ongoing.location}`, note: ongoing.note });
@@ -529,8 +558,8 @@
     const minuteAngle = now.getMinutes() * 6;
     const skipCount = courses.filter(course => isSkipped(course, selectedDay, selectedWeek)).length;
     $('dayDashboard').innerHTML = `
-      <div class="dashboard-date"><strong>${weekdayLong[selectedDay]} · ${fmtMD.format(date)}</strong><span>第 ${selectedWeek} 周 · ${courses.length} 段课程${skippedCourses.length ? ` · 已翘 ${skippedCourses.length}` : ''}</span></div>
-      <div class="calendar-bar"><span>${escapeHtml(calendarNote)}</span><button type="button" data-calendar-open>放假／调休</button></div>
+      <div class="dashboard-date"><strong>${weekdayLong[selectedDay]} · ${fmtMD.format(date)}</strong><span>第 ${selectedWeek} 周 · ${courses.length} 段课程${skippedCourses.length ? ` · 已翘 ${skippedCourses.length}` : ''}${meetingStore.forDay(key).length ? ` · 组会 ${meetingStore.forDay(key).length}` : ''}</span></div>
+      <div class="calendar-bar"><span>${escapeHtml(calendarNote)}</span><div class="calendar-bar-actions"><button type="button" data-meeting-open>安排组会</button><button type="button" data-calendar-open>放假／调休</button></div></div>
       <div class="now-row">
         <div class="clock" aria-label="当前时间 ${minutesToTime(now.getHours() * 60 + now.getMinutes())}"><i class="hand hour" style="--rotation:${hourAngle}deg"></i><i class="hand minute" style="--rotation:${minuteAngle}deg"></i><i class="clock-center"></i></div>
         <div class="now-text"><span class="clock-digital">${minutesToTime(now.getHours() * 60 + now.getMinutes())}</span><h2>${escapeHtml(state.title)}</h2><p>${escapeHtml(state.subtitle)}</p></div>
@@ -561,6 +590,8 @@
         <strong>${escapeHtml(course.name)}${skippedToday ? ' · 已翘' : ''}</strong><span>第${course.start}–${course.end}节 · ${t.start}–${t.end}</span><span>${escapeHtml(course.location)}${course.className ? ` · ${escapeHtml(course.className)}` : ''}${course.note ? ` · ${escapeHtml(course.note)}` : ''}</span>
       </button>`);
     }
+    for (const meeting of meetingStore.forDay(key))
+      parts.push(meetingBlock(meeting, key, 'day'));
     if (state.live && state.minute >= DAY_START && state.minute <= DAY_END)
       parts.push(`<div class="day-progress" style="height:${pct(state.minute)}%"></div><div class="day-now-line" style="top:${pct(state.minute)}%"><span>${minutesToTime(state.minute)}</span></div>`);
     parts.push('</div></div>');
