@@ -68,8 +68,8 @@ for (const file of ['data.js', 'gym-store.js', 'meeting-store.js', 'app.js'])
   vm.runInContext(fs.readFileSync(new URL(`../${file}`, import.meta.url), 'utf8'), sandbox, { filename: file });
 assert.equal(store.get('neu-schedule-restored-v1'), '[]', 'old-day restores clear on startup');
 
-assert.match(node('timelineGrid').innerHTML, /第7–8节/);
-assert.match(node('timelineGrid').innerHTML, /16:00–17:40/);
+assert.match(node('timelineGrid').innerHTML, /course-title/);
+assert.doesNotMatch(node('timelineGrid').innerHTML, /course-period|course-time|course-skip-label/);
 assert.match(node('timelineGrid').innerHTML, /gym-odd/);
 assert.match(node('timelineGrid').innerHTML, /gym-even/);
 assert.match(node('timelineGrid').innerHTML, /period-slot/);
@@ -94,17 +94,16 @@ node('prevWeek').listeners.click();
 segments[1].listeners.click();
 assert.match(node('dayDashboard').innerHTML, /现在可以去健身/);
 assert.match(node('dayMap').innerHTML, /应用数理统计/);
-assert.match(node('dayMap').innerHTML, /第7–8节 · 16:00–17:40/);
-assert.match(node('dayMap').innerHTML, /生命B101 · 04班（浑南）/);
+assert.match(node('dayMap').innerHTML, /class="map-course-time">16:00–17:40/);
+assert.match(node('dayMap').innerHTML, /class="map-course-location">生命B101/);
 verifyFullDayAxis(node('dayMap').innerHTML, 'map-period');
-assert.match(node('dayMap').innerHTML, /00:00–24:00/);
 assert.match(node('dayMap').innerHTML, /day-progress/);
 
 
 const openCourse = id => node('dayMap').listeners.click({ target: { closest: s => s === '[data-course]' ? { dataset: { course: String(id) } } : null } });
 const clickDay = (selector, dataset = {}) => node('dayDashboard').listeners.click({ target: { closest: s => s === selector ? { dataset } : null } });
 assert.match(node('dayMap').innerHTML, /class="map-course skipped" data-course="4"/);
-assert.match(node('dayDashboard').innerHTML, /默认已翘 1 节/);
+assert.match(node('dayDashboard').innerHTML, /已翘 1 节/);
 openCourse(4);
 assert.match(node('courseDetailBody').innerHTML, /04班（浑南）/);
 assert.equal(node('skipCourseButton').textContent, '恢复这节课');
