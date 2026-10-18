@@ -577,7 +577,7 @@
     const skipCount = courses.filter(course => isSkipped(course, selectedDay, selectedWeek)).length;
     $('dayDashboard').innerHTML = `
       <div class="dashboard-date"><strong>${weekdayLong[selectedDay]} · ${fmtMD.format(date)}</strong><span>第 ${selectedWeek} 周 · ${courses.length} 段课程${skippedCourses.length ? ` · 已翘 ${skippedCourses.length}` : ''}${meetingStore.forDay(key).length ? ` · 组会 ${meetingStore.forDay(key).length}` : ''}</span></div>
-      <div class="calendar-bar"><span>${escapeHtml(calendarNote)}</span><div class="calendar-bar-actions"><button type="button" data-meeting-open>安排组会</button><button type="button" data-calendar-open>放假／调休</button></div></div>
+      <div class="calendar-bar"><span>${escapeHtml(calendarNote)}</span><div class="calendar-bar-actions"><button type="button" data-calendar-open>放假／调休</button></div></div>
       <div class="now-row">
         <div class="clock" aria-label="当前时间 ${minutesToTime(now.getHours() * 60 + now.getMinutes())}"><i class="hand hour" style="--rotation:${hourAngle}deg"></i><i class="hand minute" style="--rotation:${minuteAngle}deg"></i><i class="clock-center"></i></div>
         <div class="now-text"><span class="clock-digital">${minutesToTime(now.getHours() * 60 + now.getMinutes())}</span><h2>${escapeHtml(state.title)}</h2><p>${escapeHtml(state.subtitle)}</p></div>
@@ -652,35 +652,8 @@
     $('meetingCancelButton').hidden = meeting.endAt !== null || Date.now() >= meeting.startAt;
     if (!$('meetingDetailDialog').open) $('meetingDetailDialog').showModal();
   }
-  function openMeetingPlan() {
-    const preferred = dateKey(selectedDate());
-    const today = dateKey(nowDate());
-    $('meetingPlanDate').min = today;
-    $('meetingPlanDate').max = dateKey(addDays(weekStart(D.semester.totalWeeks), 6));
-    $('meetingPlanDate').value = preferred >= today ? preferred : today;
-    $('meetingPlanStatus').textContent = '';
-    $('meetingPlanDialog').showModal();
-  }
   function setupMeetings() {
-    $('closeMeetingPlan').addEventListener('click', () => $('meetingPlanDialog').close());
     $('closeMeetingDetail').addEventListener('click', () => $('meetingDetailDialog').close());
-    $('meetingPlanForm').addEventListener('submit', event => {
-      event.preventDefault();
-      try {
-        const [year, month, day] = $('meetingPlanDate').value.split('-').map(Number);
-        const [hour, minute] = $('meetingPlanTime').value.split(':').map(Number);
-        if (![year, month, day, hour, minute].every(Number.isInteger) || hour > 23 || minute > 59)
-          throw new Error('请填写有效日期和时间。');
-        const timestamp = Date.UTC(year, month - 1, day, hour - 8, minute);
-        if (new Date(timestamp + 8 * 3600000).toISOString().slice(0, 10) !== $('meetingPlanDate').value)
-          throw new Error('无效日期，请重新选择。');
-        const item = meetingStore.plan(timestamp);
-        meetingMessage = '组会已安排，正在同步云端。';
-        $('meetingPlanDialog').close();
-        renderAll();
-        openMeeting(item.id);
-      } catch (error) { $('meetingPlanStatus').textContent = error.message; }
-    });
     $('meetingEndButton').addEventListener('click', () => {
       const id = $('meetingDetailDialog').dataset.meeting;
       try {
@@ -877,7 +850,6 @@
       if (button) openCourse(Number(button.dataset.course));
     });
     $('dayDashboard').addEventListener('click', event => {
-      if (event.target.closest('[data-meeting-open]')) { openMeetingPlan(); return; }
       const endMeeting = event.target.closest('[data-meeting-end]');
       if (endMeeting) {
         try { meetingStore.stop(endMeeting.dataset.meetingEnd); meetingMessage = '组会已结束。'; renderAll(); }
@@ -1131,7 +1103,7 @@
     pushStatus('正在建立订阅…');
     try {
       const config = await pushRequest('/config');
-      const registration = await navigator.serviceWorker.register('./sw.js?v=30', { updateViaCache: 'none' });
+      const registration = await navigator.serviceWorker.register('./sw.js?v=31', { updateViaCache: 'none' });
       let subscription = await registration.pushManager.getSubscription();
       if (subscription) {
         const oldKey = subscription.options?.applicationServerKey;
@@ -1338,7 +1310,7 @@
     renderAll();
     initCloud();
     clearAttentionBadge();
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js?v=30', { updateViaCache: 'none' }).then(schedulePushSync).catch(() => {});
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js?v=31', { updateViaCache: 'none' }).then(schedulePushSync).catch(() => {});
     setInterval(() => {
       if (refreshDailyState()) { renderAll(); return; }
       renderHeader();

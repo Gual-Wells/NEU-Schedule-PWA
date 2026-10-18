@@ -10,10 +10,10 @@
   <meta name="apple-mobile-web-app-title" content="课表" />
   <meta name="format-detection" content="telephone=no" />
   <title>课表</title>
-  <link rel="manifest" href="./manifest.webmanifest?v=30" />
+  <link rel="manifest" href="./manifest.webmanifest?v=31" />
   <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
   <link rel="icon" href="./icons/icon-192.png" />
-  <link rel="stylesheet" href="./styles.css?v=30" />
+  <link rel="stylesheet" href="./styles.css?v=31" />
 </head>
 <body>
   <main class="app-shell" id="app">
@@ -92,20 +92,6 @@
     </form>
   </dialog>
 
-  <dialog id="meetingPlanDialog" class="sheet-dialog">
-    <form id="meetingPlanForm" class="sheet">
-      <div class="sheet-head"><div><span class="sheet-kicker">独立日程</span><h2>安排组会</h2></div><button class="close-button" type="button" id="closeMeetingPlan" aria-label="关闭">×</button></div>
-      <p class="meeting-explainer">组会默认生效。前三小时为预计时间，之后两小时为弹性认定窗口。安排后无须手动开始；点击结束前持续占用健身时间。</p>
-      <div class="calendar-fields">
-        <label>组会日期<input id="meetingPlanDate" type="date" required /></label>
-        <label>开始时间<input id="meetingPlanTime" type="time" step="300" required value="14:00" /></label>
-      </div>
-      <div class="meeting-legend"><span class="meeting-legend-solid">预计 3h</span><span class="meeting-legend-dashed">弹性 2h</span><span>默认显示 5h · 结束前持续占用</span></div>
-      <p id="meetingPlanStatus" class="calendar-status" role="status"></p>
-      <div class="push-actions"><button type="submit">确认安排</button></div>
-    </form>
-  </dialog>
-
   <dialog id="meetingDetailDialog" class="sheet-dialog">
     <div class="sheet">
       <div class="sheet-head"><div><span class="sheet-kicker">组会 · 独立生命周期</span><h2 id="meetingDetailTitle">组会</h2></div><button class="close-button" type="button" id="closeMeetingDetail" aria-label="关闭">×</button></div>
@@ -177,14 +163,14 @@
     </form>
   </dialog>
 
-  <script src="./agenda-core.js?v=30"></script>
-  <script src="./agenda-upload.js?v=30"></script>
-  <script src="./agenda-client.js?v=30"></script>
-  <script src="./gym-store.js?v=30"></script>
-  <script src="./meeting-store.js?v=30"></script>
-  <script src="./webauthn-browser.js?v=30"></script>
-  <script src="./auth-client.js?v=30"></script>
-  <script src="./cloud-sync.js?v=30"></script>
-  <script src="./bootstrap.js?v=30"></script>
+  <script src="./agenda-core.js?v=31"></script>
+  <script src="./agenda-upload.js?v=31"></script>
+  <script src="./agenda-client.js?v=31"></script>
+  <script src="./gym-store.js?v=31"></script>
+  <script src="./meeting-store.js?v=31"></script>
+  <script src="./webauthn-browser.js?v=31"></script>
+  <script src="./auth-client.js?v=31"></script>
+  <script src="./cloud-sync.js?v=31"></script>
+  <script src="./bootstrap.js?v=31"></script>
 </body>
 </html>
