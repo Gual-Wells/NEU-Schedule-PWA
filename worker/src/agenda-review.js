@@ -1,4 +1,5 @@
 import { idOK, json, hash, enc, input } from './agenda-wire.js';
+import { applicationItems } from './agenda-context.js';
 import { importDetail } from './agenda-images.js';
 
 export async function feedback(request,env,id) {
@@ -11,7 +12,7 @@ export async function feedback(request,env,id) {
   if(!row||row.status==='cancelled'||row.upload_state!=='ready'||row.revision!==value.revision)return json({error:'申请已更新，请刷新后提交反馈'},409);
   if(row.expires_at<=now&&!row.result_json)return json({error:'原图已过期且没有可修订结果，请重新提交图片'},409);
   const [linked,history,queued]=await Promise.all([
-    env.DB.prepare('SELECT * FROM agenda_items WHERE source_import_id=?').bind(id).all(),
+    applicationItems(env,id).then(results=>({results})),
     env.DB.prepare('SELECT COUNT(*) n FROM agenda_feedback WHERE import_id=?').bind(id).first(),
     env.DB.prepare("SELECT COUNT(*) n FROM agenda_imports WHERE status IN ('queued','running') AND id<>?").bind(id).first()
   ]);
@@ -23,7 +24,7 @@ export async function feedback(request,env,id) {
     env.DB.prepare('INSERT INTO agenda_operations VALUES(?,?,?,?)').bind(value.id,digest,'{}',now),
     env.DB.prepare('INSERT INTO agenda_review_guards VALUES(?,?,?,?,?,?)').bind(value.id,id,row.revision,row.status,target?.id||null,target?.revision||null),
     env.DB.prepare('INSERT INTO agenda_feedback VALUES(?,?,?,?,?)').bind(value.id,id,value.text.trim(),row.result_json,now),
-    env.DB.prepare("UPDATE agenda_imports SET status='queued',extraction_protocol=3,processing_deadline=?,claim_hash=NULL,lease_until=NULL,error=NULL,revision=revision+1,updated_at=? WHERE id=?").bind(now+3*86400000,now,id)
+    env.DB.prepare("UPDATE agenda_imports SET status='queued',extraction_protocol=4,processing_deadline=?,claim_hash=NULL,lease_until=NULL,error=NULL,revision=revision+1,updated_at=? WHERE id=?").bind(now+3*86400000,now,id)
   ];
   try{await env.DB.batch(commands);}catch{
     const replay=await env.DB.prepare('SELECT request_hash FROM agenda_operations WHERE id=?').bind(value.id).first();

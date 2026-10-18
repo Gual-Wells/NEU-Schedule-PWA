@@ -1,27 +1,27 @@
 import '../../agenda-core.js';
 import { sessionFor } from './auth.js';
 import { feedback } from './agenda-review.js';
+import { viewItem,applicationItems,recognitionContext,validateRelation } from './agenda-context.js';
 import { idOK, json, hash, input, enc } from './agenda-wire.js';
 import { legacyUpload, imageResponse, importViews, importDetail, createBatch, uploadBatchImage, submitBatch } from './agenda-images.js';
 
 const A = globalThis.ScheduleAgenda;
-const item = row => ({ id: row.id, kind: row.kind, title: row.title, anchorAt: row.anchor_at, explicitEndAt: row.explicit_end_at,
-  location: row.location, evidence: row.evidence, resolvedAt: row.resolved_at, cancelledAt: row.cancelled_at, revision: row.revision,
-  sourceImportId:row.source_import_id,sourceImages:JSON.parse(row.source_images||'[]') });
+const item=viewItem;
 export async function agendaSnapshot(env) {
-  const [rows, imports, digests, meta] = await Promise.all([
+  const [rows, imports, digests, meta,sources] = await Promise.all([
     env.DB.prepare('SELECT * FROM agenda_items ORDER BY anchor_at').all(),
     env.DB.prepare('SELECT * FROM agenda_imports ORDER BY created_at DESC LIMIT 30').all(),
     env.DB.prepare('SELECT * FROM agenda_digests ORDER BY slot_at DESC LIMIT 14').all(),
-    env.DB.prepare('SELECT revision FROM agenda_meta WHERE id=1').first()
+    env.DB.prepare('SELECT revision FROM agenda_meta WHERE id=1').first(),
+    env.DB.prepare('SELECT * FROM agenda_item_sources ORDER BY applied_at').all()
   ]);
-  return { protocol: 1, items: rows.results.map(item), imports: await importViews(env,imports.results),
+  return { protocol: 1, items: rows.results.map(row=>({...item(row),sources:sources.results.filter(v=>v.item_id===row.id).map(v=>({importId:v.import_id,sourceImages:JSON.parse(v.source_images)}))})), imports: await importViews(env,imports.results),
     digests: digests.results.map(d => ({ id: d.id, slotAt: d.slot_at, entries: JSON.parse(d.content_json) })), revision: meta.revision };
 }
 
 function insertion(env, id, value, source, key, now, sourceImages=[]) {
-  return env.DB.prepare('INSERT INTO agenda_items(id,kind,title,anchor_at,explicit_end_at,location,evidence,source_import_id,source_item_key,created_at,updated_at,source_images) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)')
-    .bind(id, value.kind, value.title, value.anchorAt, value.explicitEndAt, value.location, value.evidence, source, key, now, now,JSON.stringify(sourceImages));
+  return env.DB.prepare('INSERT INTO agenda_items(id,kind,title,anchor_at,explicit_end_at,location,evidence,source_import_id,source_item_key,created_at,updated_at,source_images,date_start,date_end,inference) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
+    .bind(id, value.kind, value.title, value.anchorAt, value.explicitEndAt, value.location, value.evidence, source, key, now, now,JSON.stringify(sourceImages),value.dateStart,value.dateEnd,value.inference);
 }
 
 async function commit(env, op) {
@@ -41,19 +41,35 @@ async function commit(env, op) {
     if(!idOK(op.importId)||!Number.isInteger(op.revision))throw Error('导入版本无效');
     const row=await env.DB.prepare('SELECT * FROM agenda_imports WHERE id=?').bind(op.importId).first();
     if(!row||row.status!=='review'||row.revision!==op.revision)return json({error:'申请已更新，请刷新后确认'},409);
-    const result=validateExtraction(JSON.parse(row.result_json),(await importDetail(env,row.id)).images.length,false,true);
+    const result=validateExtraction(JSON.parse(row.result_json),(await importDetail(env,row.id)).images.length,false,true,row.extraction_protocol>=4);
     const candidate=result.items[0];
-    if(!candidate.localTime||candidate.question.trim())return json({error:'此申请仍有待确认内容，请提交文字反馈重新生成'},409);
-    const value=A.normalizeItem({...candidate,anchorAt:A.localTime(candidate.localTime),explicitEndAt:candidate.localEnd?A.localTime(candidate.localEnd):null},now);
-    const linked=(await env.DB.prepare('SELECT * FROM agenda_items WHERE source_import_id=?').bind(row.id).all()).results;
-    if(linked.length>1)return json({error:'旧申请包含多份事项，请反馈后重新生成'},409);
+    if(!candidate.localTime&&!candidate.dateStart)return json({error:'尚无法确定日期，请用反馈补充线索'},409);
+    const value=A.generatedItem(candidate,now),context=JSON.parse(row.recognition_context||'[]');
+    let canonical=row.canonical_id||row.id,targetSnapshot=context.find(v=>v.applicationId===(row.canonical_id||row.id))||null;
+    if(result.relation?.type==='update'){
+      const relation=validateRelation(result.relation,context);canonical=relation.targetImportId;
+      targetSnapshot=context.find(v=>v.applicationId===canonical);
+      if(row.canonical_id&&row.canonical_id!==canonical)return json({error:'本申请已归属另一事项，请刷新后反馈'},409);
+    }
+    const original=await env.DB.prepare('SELECT * FROM agenda_imports WHERE id=?').bind(canonical).first();
+    if(!original||original.status==='cancelled')return json({error:'原申请已取消，请重新识别'},409);
+    if(canonical!==row.id&&(!targetSnapshot||original.revision!==targetSnapshot.revision))return json({error:'原申请已更新，请反馈后重新生成合并结果'},409);
+    const linked=await applicationItems(env,canonical);
+    if(linked.length>1)return json({error:'旧申请包含多份事项，暂不能整体改写'},409);
     const target=linked[0];
     if(target&&(target.resolved_at!==null||target.cancelled_at!==null))return json({error:'事项已完成或取消，不能改写安排'},409);
+    if(targetSnapshot&&(target?.id||null)!==(targetSnapshot.item?.id||null))return json({error:'原事项已变化，请重新识别'},409);
+    if(targetSnapshot?.item&&target.revision!==targetSnapshot.item.revision)return json({error:'原事项已更新，请重新识别'},409);
     commands.push(env.DB.prepare('INSERT INTO agenda_review_guards VALUES(?,?,?,?,?,?)').bind(op.id,row.id,row.revision,'review',target?.id||null,target?.revision||null));
-    if(target)commands.push(env.DB.prepare('UPDATE agenda_items SET kind=?,title=?,anchor_at=?,explicit_end_at=?,location=?,evidence=?,source_item_key=?,source_images=?,revision=revision+1,updated_at=? WHERE id=?')
-      .bind(value.kind,value.title,value.anchorAt,value.explicitEndAt,value.location,value.evidence,candidate.key,JSON.stringify(candidate.sourceImages),now,target.id));
-    else commands.push(insertion(env,'a-'+op.id+'-0',value,row.id,candidate.key,now,candidate.sourceImages));
-    commands.push(env.DB.prepare("UPDATE agenda_imports SET status='applied',revision=revision+1,updated_at=? WHERE id=?").bind(now,row.id));
+    if(canonical!==row.id)commands.push(env.DB.prepare('INSERT INTO agenda_review_guards VALUES(?,?,?,?,?,?)').bind(op.id+'-target',canonical,original.revision,original.status,target?.id||null,target?.revision||null));
+    const itemId=target?.id||'a-'+op.id+'-0';
+    if(target)commands.push(env.DB.prepare('UPDATE agenda_items SET kind=?,title=?,anchor_at=?,explicit_end_at=?,location=?,evidence=?,source_import_id=?,source_item_key=?,source_images=?,date_start=?,date_end=?,inference=?,revision=revision+1,updated_at=? WHERE id=?')
+      .bind(value.kind,value.title,value.anchorAt,value.explicitEndAt,value.location,value.evidence,row.id,candidate.key,JSON.stringify(candidate.sourceImages),value.dateStart,value.dateEnd,value.inference,now,target.id));
+    else commands.push(insertion(env,itemId,value,row.id,candidate.key,now,candidate.sourceImages),env.DB.prepare('INSERT INTO agenda_application_items VALUES(?,?)').bind(canonical,itemId));
+    if(canonical!==row.id&&original.result_json){const previous=JSON.parse(original.result_json);if(previous.items?.length===1)commands.push(env.DB.prepare('INSERT OR IGNORE INTO agenda_item_sources VALUES(?,?,?,?)').bind(itemId,canonical,JSON.stringify(previous.items[0].sourceImages||[1]),original.updated_at));}
+    commands.push(env.DB.prepare('INSERT INTO agenda_item_sources VALUES(?,?,?,?) ON CONFLICT(item_id,import_id) DO UPDATE SET source_images=excluded.source_images,applied_at=excluded.applied_at').bind(itemId,row.id,JSON.stringify(candidate.sourceImages),now));
+    if(canonical!==row.id)commands.push(env.DB.prepare('UPDATE agenda_imports SET canonical_id=? WHERE id=?').bind(canonical,row.id));
+    commands.push(env.DB.prepare("UPDATE agenda_imports SET status='applied',claim_hash=NULL,lease_until=NULL,revision=revision+1,updated_at=? WHERE id=? OR id=? OR canonical_id=?").bind(now,row.id,canonical,canonical));
   } else if (op.type === 'resolve' || op.type === 'cancel') {
     if (!idOK(op.itemId) || !Number.isSafeInteger(op.at) || op.at > now + 60000 || op.at < now - 31 * A.DAY) throw Error('完成时间无效');
     const row = await env.DB.prepare('SELECT * FROM agenda_items WHERE id=?').bind(op.itemId).first();
@@ -75,7 +91,7 @@ async function commit(env, op) {
   return json({ ok: true, ...await agendaSnapshot(env) });
 }
 
-export function validateExtraction(value,imageCount=1,requireSources=false,single=false) {
+export function validateExtraction(value,imageCount=1,requireSources=false,single=false,flex=false) {
   if (!value || !Array.isArray(value.items) || value.items.length > 20 || (single&&value.items.length!==1) || typeof value.summary !== 'string' || value.summary.length > 2000) throw Error('识别结果格式无效');
   const seen = new Set();
   const items = value.items.map(v => {
@@ -87,9 +103,12 @@ export function validateExtraction(value,imageCount=1,requireSources=false,singl
     if (typeof v.location !== 'string' || v.location.length > 200 || typeof v.evidence !== 'string' || v.evidence.length > 1200 || typeof v.question !== 'string' || v.question.length > 800) throw Error('识别说明无效');
     const sourceImages=v.sourceImages??(requireSources?null:[1]);
     if(!Array.isArray(sourceImages)||!sourceImages.length||sourceImages.length>imageCount||new Set(sourceImages).size!==sourceImages.length||sourceImages.some(n=>!Number.isInteger(n)||n<1||n>imageCount))throw Error('识别结果的来源图片编号无效');
-    return { key:v.key, kind:v.kind, title:v.title, localTime:v.localTime, localEnd:v.localEnd, location:v.location, evidence:v.evidence, question:v.question,sourceImages };
+    if(v.dateStart){A.generatedItem(v);if(v.localTime!==null||v.localEnd!==null)throw Error('全天事项不能同时指定精确时刻');}
+    else if(v.dateEnd)throw Error('全天事项缺少开始日期');
+    const extra=flex||v.dateStart?{dateStart:v.dateStart||null,dateEnd:v.dateStart?(v.dateEnd||v.dateStart):null,inference:v.inference||''}:{};
+    return { ...extra,key:v.key, kind:v.kind, title:v.title, localTime:v.localTime, localEnd:v.localEnd, location:v.location, evidence:v.evidence, question:v.question,sourceImages };
   });
-  return { summary: value.summary, items };
+  return { summary: value.summary, items,...(value.relation?{relation:value.relation}:{}) };
 }
 
 async function runner(request, env, url) {
@@ -98,16 +117,17 @@ async function runner(request, env, url) {
   const now = Date.now();
   if (url.pathname === '/runner/claim' && request.method === 'POST') {
     const capabilities=await input(request);
-    if(capabilities.protocol!==undefined&&![1,2,3].includes(capabilities.protocol))return json({error:'运行器协议版本不支持'},409);
+    if(capabilities.protocol!==undefined&&![1,2,3,4].includes(capabilities.protocol))return json({error:'运行器协议版本不支持'},409);
+    if(capabilities.importId!==undefined&&!idOK(capabilities.importId))throw Error('申请编号无效');
     await cleanupAgenda(env, now);
-    const row = await env.DB.prepare("SELECT * FROM agenda_imports WHERE status='queued' AND upload_state='ready' AND processing_deadline>? AND (extraction_protocol<3 OR ?=3) AND (image_protocol=1 OR ?>=2) ORDER BY updated_at,id LIMIT 1").bind(now,capabilities.protocol||1,capabilities.protocol||1).first();
+    const row = await env.DB.prepare("SELECT * FROM agenda_imports WHERE status='queued' AND upload_state='ready' AND processing_deadline>? AND (extraction_protocol<=?) AND (image_protocol=1 OR ?>=2) AND (? IS NULL OR id=?) ORDER BY updated_at,id LIMIT 1").bind(now,capabilities.protocol||1,capabilities.protocol||1,capabilities.importId||null,capabilities.importId||null).first();
     if (!row) return json({ job: null });
-    const claim = crypto.randomUUID();
-    const written = await env.DB.prepare("UPDATE agenda_imports SET status='running',generation=generation+1,claim_hash=?,lease_until=?,revision=revision+1,updated_at=? WHERE id=? AND status='queued' AND upload_state='ready' AND processing_deadline>? AND revision=?")
-      .bind(await hash(enc.encode(claim)), now + 5 * 60000, now, row.id, now,row.revision).run();
+    const claim = crypto.randomUUID(),context=capabilities.protocol===4?await recognitionContext(env,row):[];
+    const written = await env.DB.prepare("UPDATE agenda_imports SET status='running',extraction_protocol=?,recognition_context=?,generation=generation+1,claim_hash=?,lease_until=?,revision=revision+1,updated_at=? WHERE id=? AND status='queued' AND upload_state='ready' AND processing_deadline>? AND revision=?")
+      .bind(capabilities.protocol===4?4:row.extraction_protocol,JSON.stringify(context),await hash(enc.encode(claim)), now + 5 * 60000, now, row.id, now,row.revision).run();
     if (!written.meta.changes) return json({ job: null });
     const detail=await importDetail(env,row.id);
-    return json({ job: { protocol:row.image_protocol,extractionProtocol:row.extraction_protocol,sourceCount:detail.images.length,sourceExpiresAt:row.expires_at,previousResult:detail.result,feedback:detail.feedback,id:row.id,claim,generation:row.generation+1,mime:row.mime,digest:row.digest,note:row.note,referenceAt:row.reference_at,
+    return json({ job: { protocol:row.image_protocol,extractionProtocol:capabilities.protocol===4?4:row.extraction_protocol,knownApplications:context,sourceCount:detail.images.length,sourceExpiresAt:row.expires_at,previousResult:detail.result,feedback:detail.feedback,id:row.id,claim,generation:row.generation+1,mime:row.mime,digest:row.digest,note:row.note,referenceAt:row.reference_at,
       images:(row.expires_at>now?detail.images:[]).map(image=>({...image,path:'/runner/image/'+row.id+'/'+image.id})) } });
   }
   const match = url.pathname.match(/^\/runner\/(image|heartbeat|result|fail)\/([A-Za-z0-9_-]{1,90})(?:\/([A-Za-z0-9_-]{1,90}))?$/);
@@ -126,7 +146,8 @@ async function runner(request, env, url) {
     sql = 'lease_until=?,updated_at=?'; args = [now + 5 * 60000, now];
   } else if (action === 'result') {
     const detail=await importDetail(env,row.id);
-    const result = validateExtraction(await input(request),detail.images.length,row.image_protocol===2,row.extraction_protocol===3);
+    const result = validateExtraction(await input(request),detail.images.length,row.image_protocol===2,row.extraction_protocol>=3,row.extraction_protocol>=4);
+    if(result.relation)result.relation=validateRelation(result.relation,JSON.parse(row.recognition_context||'[]'));
     sql = "status='review',result_json=?,claim_hash=NULL,lease_until=NULL,revision=revision+1,updated_at=?"; args = [JSON.stringify(result), now];
   } else if (action === 'fail') {
     sql = "status='failed',error=?,claim_hash=NULL,lease_until=NULL,revision=revision+1,updated_at=?"; args = ['识别未完成，可对本申请提交反馈后重试。', now];
@@ -176,7 +197,7 @@ export async function agendaRoute(request, env) {
     if(revision&&request.method==='POST')return await feedback(request,env,revision[1]);
     const cancel = url.pathname.match(/^\/imports\/([A-Za-z0-9_-]{1,90})\/cancel$/);
     if (cancel && request.method === 'POST') {
-      if(await env.DB.prepare('SELECT id FROM agenda_items WHERE source_import_id=? LIMIT 1').bind(cancel[1]).first())return json({error:'此申请已关联事项，请从事项操作完成或取消'},409);
+      if((await applicationItems(env,cancel[1])).length)return json({error:'此申请已关联事项，请从事项操作完成或取消'},409);
       const current=await env.DB.prepare('SELECT revision,status FROM agenda_imports WHERE id=?').bind(cancel[1]).first();
       if(!current)return json({error:'未找到申请'},404);
       await env.DB.batch([

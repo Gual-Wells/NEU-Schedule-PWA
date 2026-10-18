@@ -209,6 +209,16 @@
     </button>`;
   }
 
+  function nonCourseBlocks(key,size) {
+    const meetings=meetingStore.forDay(key);
+    return window.AgendaClient?.blocks(key,size,meetings) ?? meetings.map(m=>meetingBlock(m,key,size)).join('');
+  }
+  function courseHasOverlay(key,start,end) {
+    const meetings=meetingStore.forDay(key),[base]=window.MeetingStore.dayRange(key);
+    if(window.AgendaClient?.overlaps)return window.AgendaClient.overlaps(key,base+start*60000,base+end*60000,meetings);
+    return meetings.some(v=>v.startAt<base+end*60000&&base+start*60000<meetingEnd(v));
+  }
+
   function shortCourseName(name, span) {
     const names = {
       '思想政治理论课（硕士必修）': '思政必修',
@@ -344,13 +354,14 @@
         pieces.push(`<div class="gym-guide ${aligned ? 'aligned' : 'aux'}" style="top:${pct(boundary)}%"></div>`);
       }
 
+      const meetingDayKey = dateKey(addDays(weekMonday, day - 1));
       for (const course of rawCourses(day, selectedWeek)) {
         const time = periodTime(course);
         const start = timeToMinutes(time.start);
         const end = timeToMinutes(time.end);
         const duration = end - start;
         const skippedToday = isSkipped(course, day, selectedWeek);
-        pieces.push(`<button class="course-block ${duration < 95 ? 'compact' : ''} ${skippedToday ? 'skipped' : ''}" type="button" data-course="${course._id}" data-day="${day}" style="top:${pct(start)}%;height:${pct(end) - pct(start)}%;--course-color:${course._color}">
+        pieces.push(`<button class="course-block ${courseHasOverlay(meetingDayKey,start,end)?'has-extras':''} ${duration < 95 ? 'compact' : ''} ${skippedToday ? 'skipped' : ''}" type="button" data-course="${course._id}" data-day="${day}" style="top:${pct(start)}%;height:${pct(end) - pct(start)}%;--course-color:${course._color}">
           <span class="course-title">${escapeHtml(shortCourseName(course.name, course.end - course.start + 1))}</span>
           <span class="course-period">第${course.start}–${course.end}节</span>
           <span class="course-time">${time.start}–${time.end}</span>
@@ -358,10 +369,7 @@
         </button>`);
       }
 
-      const meetingDayKey = dateKey(addDays(weekMonday, day - 1));
-      for (const meeting of meetingStore.forDay(meetingDayKey))
-        pieces.push(meetingBlock(meeting, meetingDayKey, 'week'));
-      pieces.push(window.AgendaClient?.blocks(meetingDayKey,'week') || '');
+      pieces.push(nonCourseBlocks(meetingDayKey,'week'));
 
       if (dateKey(addDays(weekMonday, day - 1)) === dateKey(now)) {
         const currentMinutes = now.getHours() * 60 + now.getMinutes();
@@ -604,13 +612,11 @@
       const t = periodTime(course);
       const start = timeToMinutes(t.start), end = timeToMinutes(t.end);
       const skippedToday = isSkipped(course, selectedDay, selectedWeek);
-      parts.push(`<button type="button" class="map-course ${skippedToday ? 'skipped' : ''}" data-course="${course._id}" style="top:${pct(start)}%;height:${pct(end) - pct(start)}%;--course-color:${course._color}">
+      parts.push(`<button type="button" class="map-course ${courseHasOverlay(key,start,end)?'has-extras ':''}${skippedToday ? 'skipped' : ''}" data-course="${course._id}" style="top:${pct(start)}%;height:${pct(end) - pct(start)}%;--course-color:${course._color}">
         <strong>${escapeHtml(course.name)}${skippedToday ? ' · 已翘' : ''}</strong><span>第${course.start}–${course.end}节 · ${t.start}–${t.end}</span><span>${escapeHtml(course.location)}${course.className ? ` · ${escapeHtml(course.className)}` : ''}${course.note ? ` · ${escapeHtml(course.note)}` : ''}</span>
       </button>`);
     }
-    for (const meeting of meetingStore.forDay(key))
-      parts.push(meetingBlock(meeting, key, 'day'));
-    parts.push(window.AgendaClient?.blocks(key,'day') || '');
+    parts.push(nonCourseBlocks(key,'day'));
     if (state.live && state.minute >= DAY_START && state.minute <= DAY_END)
       parts.push(`<div class="day-progress" style="height:${pct(state.minute)}%"></div><div class="day-now-line" style="top:${pct(state.minute)}%"><span>${minutesToTime(state.minute)}</span></div>`);
     parts.push('</div></div>');
@@ -1103,7 +1109,7 @@
     pushStatus('正在建立订阅…');
     try {
       const config = await pushRequest('/config');
-      const registration = await navigator.serviceWorker.register('./sw.js?v=32', { updateViaCache: 'none' });
+      const registration = await navigator.serviceWorker.register('./sw.js?v=33', { updateViaCache: 'none' });
       let subscription = await registration.pushManager.getSubscription();
       if (subscription) {
         const oldKey = subscription.options?.applicationServerKey;
@@ -1287,7 +1293,7 @@
     setupMeetings();
     setupCalendar();
     setupPush();
-    window.AgendaClient?.init(() => { renderAll(); schedulePushSync(); });
+    window.AgendaClient?.init(() => { renderAll(); schedulePushSync(); },{openMeeting});
     document.addEventListener('click', event => { if(event.target.closest('[data-agenda-open]')) window.AgendaClient?.open(); });
     $('cloudButton').addEventListener('click', () => {
       cloudStatus(cloud?.connected() ? '云端已连接；可手动刷新数据' : '请使用通行密钥登录');
@@ -1310,7 +1316,7 @@
     renderAll();
     initCloud();
     clearAttentionBadge();
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js?v=32', { updateViaCache: 'none' }).then(schedulePushSync).catch(() => {});
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js?v=33', { updateViaCache: 'none' }).then(schedulePushSync).catch(() => {});
     setInterval(() => {
       if (refreshDailyState()) { renderAll(); return; }
       renderHeader();

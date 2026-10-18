@@ -3,7 +3,8 @@
   "additionalProperties": false,
   "required": [
     "summary",
-    "items"
+    "items",
+    "relation"
   ],
   "properties": {
     "summary": {
@@ -25,7 +26,10 @@
           "location",
           "evidence",
           "question",
-          "sourceImages"
+          "sourceImages",
+          "dateStart",
+          "dateEnd",
+          "inference"
         ],
         "properties": {
           "key": {
@@ -76,10 +80,61 @@
               "minimum": 1,
               "maximum": 8
             }
+          },
+          "dateStart": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "dateEnd": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "inference": {
+            "type": "string",
+            "maxLength": 1200
           }
         }
       },
       "minItems": 1
+    },
+    "relation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "targetImportId",
+        "targetItemId",
+        "reason"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "new",
+            "update"
+          ]
+        },
+        "targetImportId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "targetItemId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "maxLength": 1200
+        }
+      }
     }
   }
 }
