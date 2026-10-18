@@ -22,7 +22,7 @@
     app.innerHTML = appMarkup;
     app.classList.remove('login-mode');
     const script = document.createElement('script');
-    script.src = './app.js?v=34';
+    script.src = './app.js?v=35';
     document.body.append(script);
   }
   async function load() {
@@ -38,7 +38,7 @@
     app.innerHTML = `<section class="login-box">
       <div class="login-head"><strong>个人课表</strong><span>NEU SCHEDULE</span></div>
       <div class="login-body">
-        <p>${enrolled?'':open?'登记已开放':'未登记通行密钥'}</p>
+        <p>${enrolled?'通行密钥登录':open?'通行密钥登记 · 窗口已开放':'未登记通行密钥 · 登记窗口未开放'}</p>
         ${open ? '<label for="setupKey">初始化密钥</label><input id="setupKey" type="password" autocomplete="off" placeholder="输入初始化密钥" />' : ''}
         <button id="loginSubmit" type="button">${enrolled ? '使用通行密钥登录' : open ? '登记通行密钥' : '检查登记窗口'}</button>
         <p id="loginMessage" role="status"></p>
