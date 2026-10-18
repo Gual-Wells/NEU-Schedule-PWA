@@ -1,0 +1,25 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["summary", "items"],
+  "properties": {
+    "summary": {"type": "string"},
+    "items": {
+      "type": "array", "maxItems": 20,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["key", "kind", "title", "localTime", "localEnd", "location", "evidence", "question"],
+        "properties": {
+          "key": {"type": "string"},
+          "kind": {"type": "string", "enum": ["activity", "deadline"]},
+          "title": {"type": "string"},
+          "localTime": {"type": ["string", "null"]},
+          "localEnd": {"type": ["string", "null"]},
+          "location": {"type": "string"},
+          "evidence": {"type": "string"},
+          "question": {"type": "string"}
+        }
+      }
+    }
+  }
+}

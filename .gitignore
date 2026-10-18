@@ -1,4 +1,5 @@
 worker/node_modules/
+.wrangler/
 worker/.wrangler/
 worker/.wrangler-out/
 worker/.dev.vars

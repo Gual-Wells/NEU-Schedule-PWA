@@ -19,6 +19,10 @@
 
 订阅 endpoint 限制为 Apple、Google FCM 或 Mozilla 的推送域名。课程、训练、翘课、偏好、订阅和令牌散列保存在 D1；原始设备令牌只存客户端。`VAPID_PRIVATE_KEY`、`VAPID_SUBJECT`、`VAPID_PUBLIC_KEY` 和 `ENROLLMENT_KEY` 均通过 Cloudflare Secret 配置。
 
+## 事项与图片接口
+
+新增同域登录保护的 /agenda、/agenda/commit、/imports，以及独立 Bearer 密钥保护的 /runner/*。模型只写待确认候选；Cron 每日北京时间 07:00 / 22:00 保存并发送未来三日汇总。协议、限额、本机识别任务与部署顺序见 [事项协议](../protocol/AGENDA.md)。
+
 ## 本地验证
 
 在 `worker/` 中运行 `pnpm install --frozen-lockfile`、`pnpm test`、`pnpm exec wrangler deploy --dry-run`、`pnpm exec wrangler d1 migrations apply neu-schedule-push --local`。本地 Worker 用 `pnpm exec wrangler dev --local --ip 127.0.0.1 --port 8791 --var ENROLLMENT_KEY:local-test` 启动。仓库根目录的 `scripts/integration-auth-local.mjs` 验证关闭窗口；执行 `worker/admin/open-enrollment.sql` 后可验证开启窗口和完整 WebAuthn 登记/登录；`worker/admin/reset-auth.sql` 验证重置后仍为关闭状态。

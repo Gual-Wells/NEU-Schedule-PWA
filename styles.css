@@ -545,3 +545,23 @@ h2 { margin: 0; font-size: 17px; line-height: 1.2; }
   .meeting-week .meeting-copy small { display: none; }
   .calendar-bar-actions button { padding: 4px 5px; font-size: 9px; }
 }
+/* Agenda keeps the existing sheet and time-grid visual language. */
+.agenda-sheet { max-height: 88dvh; overflow-y: auto; }
+.agenda-upload, .agenda-candidate { display: grid; gap: 12px; margin: 12px 0; }
+.agenda-upload label, .agenda-candidate label { display: grid; gap: 5px; font-size: 13px; color: #34516e; }
+.agenda-upload input, .agenda-candidate input, .agenda-candidate select { width: 100%; min-height: 42px; padding: 8px; border: 1px solid #b6c7d7; border-radius: 8px; background: white; color: #183c60; font: inherit; box-sizing: border-box; }
+.agenda-candidate { border: 1px solid #b6c7d7; border-radius: 12px; padding: 12px; }
+.agenda-candidate .agenda-check { display: flex; align-items: center; }
+.agenda-check input { width: 22px; min-height: 22px; }
+.agenda-card { border: 1px solid #d0dce7; border-radius: 10px; padding: 12px; margin: 10px 0; background: #f6f9fc; }
+.agenda-card strong, .agenda-card small { display: block; overflow-wrap: anywhere; }
+.agenda-card p, .agenda-card small, .agenda-candidate p, .agenda-window { font-size: 13px; line-height: 1.6; }
+.agenda-card pre { font: inherit; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; }
+.agenda-question, .agenda-card.overdue, .agenda-card.unconfirmed { color: #963c36; }
+.agenda-block { z-index: 6; border-color: #397e78; color: #144e49; }
+.agenda-block .meeting-solid { background: #c5e5de; }
+.agenda-block .meeting-extension { background: #edf7f4; border-color: #397e78; }
+.agenda-block.deadline { border-color: #af7133; color: #704415; }
+.agenda-block.deadline .meeting-solid { background: #f3d9b2; }
+.agenda-block.deadline .meeting-extension { background: #fcf2e4; border-color: #af7133; }
+.agenda-upload .push-actions { flex-wrap: wrap; }

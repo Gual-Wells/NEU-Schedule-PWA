@@ -2,6 +2,7 @@ import { rawPayload, sendPushNotification } from '@mmmike/web-push/send';
 import { authRoute, sessionFor } from './auth.js';
 import { readCalendar, validateCalendar } from './calendar.js';
 import { decodeRestores, encodeRestores } from './course-state.js';
+import { agendaRoute, cleanupAgenda, dispatchDigests, agendaBlocksGym } from './agenda.js';
 
 const encoder = new TextEncoder();
 const MAX_JOBS = 1800;
@@ -159,17 +160,17 @@ function validJob(job, now) {
     Number.isInteger(job.ttl) && job.ttl >= 60 && job.ttl <= 3600;
 }
 
-function pushPayload(title, body, appUrl) {
+function pushPayload(title, body, appUrl, tag) {
   return rawPayload(JSON.stringify({
     web_push: 8030,
-    notification: { title, body, navigate: appUrl, lang: 'zh-CN', dir: 'ltr', silent: false }
+    notification: { title, body, navigate: appUrl, ...(tag ? { tag } : {}), lang: 'zh-CN', dir: 'ltr', silent: false }
   }));
 }
 
-async function send(device, title, body, ttl, env) {
+async function send(device, title, body, ttl, env, options = {}) {
   return sendPushNotification(
     { endpoint: device.endpoint, keys: { p256dh: device.p256dh, auth: device.auth } },
-    pushPayload(title, body, env.APP_URL),
+    pushPayload(title, body, options.url || env.APP_URL, options.tag),
     { publicKey: env.VAPID_PUBLIC_KEY, privateKey: env.VAPID_PRIVATE_KEY, subject: env.VAPID_SUBJECT },
     { ttl, urgency: 'high', timeoutMs: 10000 }
   );
@@ -177,6 +178,7 @@ async function send(device, title, body, ttl, env) {
 
 async function route(request, env) {
   const url = new URL(request.url);
+  if (/^\/(agenda|imports|runner)(\/|$)/.test(url.pathname)) return agendaRoute(request, env);
   if (request.method === 'GET' && url.pathname === '/health') return json({ ok: true });
   if (request.method === 'GET' && url.pathname === '/config') return json({ publicKey: env.VAPID_PUBLIC_KEY });
   if (request.method === 'GET' && url.pathname === '/auth/status') return authRoute(request, env);
@@ -251,10 +253,12 @@ async function route(request, env) {
   if (!device) return json({ error: '订阅凭证已失效，请重新配对' }, 401);
 
   if (url.pathname === '/sync') {
-    const jobs = input.jobs;
+    let jobs = input.jobs;
     const now = Date.now();
     if (!Array.isArray(jobs) || jobs.length > MAX_JOBS || !jobs.every(job => validJob(job, now))) return json({ error: '提醒计划无效' }, 400);
     if (new Set(jobs.map(job => job.id)).size !== jobs.length) return json({ error: '提醒编号重复' }, 400);
+    // Old clients cannot restore individual meeting reminders. Digests have their own delivery table.
+    jobs = jobs.filter(job => !job.id.startsWith('meeting-'));
     const hash = await sha256(JSON.stringify(jobs));
     if (hash === device.plan_hash) return json({ ok: true, count: jobs.length, unchanged: true });
     const commands = [env.DB.prepare('DELETE FROM reminders WHERE device_id = ? AND sent_at IS NULL').bind(device.id)];
@@ -310,6 +314,19 @@ async function dispatchDue(env) {
     ORDER BY r.due_at LIMIT 40
   `).bind(now, now - 15 * 60000, now - 2 * 60000).all();
   for (const row of results) {
+    // A stale/offline client's gym plan must never suggest a window occupied by an agenda item.
+    const gymReminder = /^\d{4}-\d\d-\d\d-g/.test(row.reminder_id);
+    let gymFrom=row.due_at, gymTo=row.due_at+30*60000;
+    const times=gymReminder && row.body.match(/^(\d\d):(\d\d)–(\d\d):(\d\d)/);
+    if(times) {
+      const [start]=globalThis.ScheduleAgenda.dayRange(row.reminder_id.slice(0,10));
+      gymFrom=start+(Number(times[1])*60+Number(times[2]))*60000;
+      gymTo=start+(Number(times[3])*60+Number(times[4]))*60000;
+    }
+    if (gymReminder && await agendaBlocksGym(env, gymFrom, gymTo, now)) {
+      await env.DB.prepare('UPDATE reminders SET sent_at=? WHERE device_id=? AND reminder_id=?').bind(now,row.device_id,row.reminder_id).run();
+      continue;
+    }
     const claim = await env.DB.prepare(`
       UPDATE reminders SET claim_at = ?, attempts = attempts + 1
       WHERE device_id = ? AND reminder_id = ? AND sent_at IS NULL AND (claim_at IS NULL OR claim_at < ?)
@@ -346,7 +363,11 @@ export default {
       return response;
     }
   },
-  async scheduled(_event, env) { await dispatchDue(env); }
+  async scheduled(_event, env) {
+    await cleanupAgenda(env);
+    await dispatchDigests(env, send);
+    await dispatchDue(env);
+  }
 };
 
 export { validJob, validSubscription, pushPayload };
