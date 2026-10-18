@@ -4,7 +4,7 @@
   const KEY = 'neu-agenda-v1', QUEUE = 'neu-agenda-queue-v1';
   const read = (key, fallback) => { try { return JSON.parse(localStorage.getItem(key)) || fallback; } catch { return fallback; } };
   let state = read(KEY, { items: [], imports: [], digests: [] }), queue = read(QUEUE, []);
-  let onChange = () => {}, busy = null, editing = null, message = '', initialized = false;
+  let onChange = () => {}, busy = null, editing = null, message = '', initialized = false, lastSync=0;
   const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const uuid = () => crypto.randomUUID();
   const local = at => new Date(at + 8*A.HOUR).toISOString().slice(0,16);
@@ -25,7 +25,12 @@
     return items.sort((a,b) => a.anchorAt-b.anchorAt);
   }
   async function request(path, value) { return window.ScheduleAuth.request(path, value === undefined ? undefined : {...value, protocol:1}); }
-  function changed() { onChange(); if ($('agendaDialog')?.open && !editing) render(); }
+  function changed() {
+    onChange();
+    if(!$('agendaDialog')?.open)return;
+    if(!editing)render();
+    else if(editing.id){const job=state.imports.find(v=>v.id===editing.id);if(job&&(job.revision!==editing.revision||job.status!==editing.status))review(job);}
+  }
   function sync() {
     if (busy) return busy;
     busy = (async () => {
@@ -44,7 +49,7 @@
         }
         queue.shift(); save(); changed();
       }
-      state = await request('/agenda'); save(); changed();
+      state = await request('/agenda'); lastSync=Date.now(); save(); changed();
     })().catch(error => { message = '等待同步：' + error.message; changed(); throw error; }).finally(() => { busy = null; });
     return busy;
   }
@@ -61,22 +66,40 @@
       return `<article class="agenda-card ${esc(status)}"><strong>${v.kind==='deadline'?'DDL':'活动'} · ${esc(v.title)}</strong><p>${A.format(v.anchorAt)}${v.explicitEndAt?'—'+A.format(v.explicitEndAt):''}${v.location?' · '+esc(v.location):''}</p><small>${names[status]} · 占用 ${A.format(w.from)} 起${!ended&&Date.now()>=w.from?'，直至确认结束':''}</small>${(v.evidence||v.sourceImportId)?`<details><summary>来源说明</summary><p>${esc(v.evidence)}</p>${sourceLinks(v)}</details>`:''}<div class="push-actions">${!ended&&(v.kind==='deadline'||Date.now()>=v.anchorAt)?`<button type="button" data-agenda-resolve="${esc(v.id)}">${v.kind==='deadline'?'DDL 达成':'结束活动'}</button>`:''}${!ended&&Date.now()<w.from?`<button type="button" data-agenda-cancel="${esc(v.id)}">取消安排</button>`:''}</div></article>`;
     }).join('');
     const importNames={queued:'等待本机识别',running:'正在识别',review:'待确认入表',applied:'已入表',failed:'识别未完成',cancelled:'已取消'};
-    $('agendaContent').innerHTML = `<h3>待处理事项 · ${pending.length}</h3>${cards(pending)||'<p>暂无待处理事项，可从图片导入或手动添加。</p>'}<h3>图片导入</h3>${state.imports.filter(v=>v.status!=='cancelled').map(v=>`<article class="agenda-card"><strong>${(v.uploadState==='draft'&&v.status==='queued'?'等待补传图片':importNames[v.status])}</strong><small>${A.format(v.createdAt)}${v.error?' · '+esc(v.error):''}</small><div class="push-actions">${v.status==='review'?`<button type="button" data-agenda-review="${esc(v.id)}">检查并入表</button>`:''}${v.status!=='applied'?`<button type="button" data-import-cancel="${esc(v.id)}">取消导入</button>`:''}</div></article>`).join('')||'<p>尚无图片导入记录。</p>'}<details><summary>已完成或取消 · ${done.length}</summary>${cards(done)}</details><h3 id="agendaDigestHeading">早晚汇总</h3>${state.digests.map(v=>`<details class="agenda-card"><summary>${A.format(v.slotAt)} · ${v.entries.length} 项</summary><pre>${esc(A.digestText(v.entries))}</pre></details>`).join('')||'<p>第一份汇总将在下一个 07:00 或 22:00 生成。</p>'}`;
+    $('agendaContent').innerHTML = `<h3>待处理事项 · ${pending.length}</h3>${cards(pending)||'<p>暂无待处理事项，可从图片导入或手动添加。</p>'}<h3>图片导入</h3>${state.imports.filter(v=>v.status!=='cancelled').map(v=>`<article class="agenda-card"><strong>${(v.uploadState==='draft'&&v.status==='queued'?'等待补传图片':importNames[v.status])}</strong><small>${A.format(v.createdAt)}${v.error?' · '+esc(v.error):''}</small><div class="push-actions">${v.uploadState!=='draft'?`<button type="button" data-agenda-review="${esc(v.id)}">查看申请${v.status==='review'?'并确认':''}</button>`:''}${v.status!=='applied'&&!v.linkedItemIds?.length?`<button type="button" data-import-cancel="${esc(v.id)}">取消导入</button>`:''}</div></article>`).join('')||'<p>尚无图片导入记录。</p>'}<details><summary>已完成或取消 · ${done.length}</summary>${cards(done)}</details><h3 id="agendaDigestHeading">早晚汇总</h3>${state.digests.map(v=>`<details class="agenda-card"><summary>${A.format(v.slotAt)} · ${v.entries.length} 项</summary><pre>${esc(A.digestText(v.entries))}</pre></details>`).join('')||'<p>第一份汇总将在下一个 07:00 或 22:00 生成。</p>'}`;
   }
   function open(id) {
-    editing = null; $('agendaEditor').hidden = true; $('agendaContent').hidden = false;
+    editing = null; $('agendaStatus').hidden=false; $('agendaUploadPanel').hidden=false; $('agendaReview').hidden=true; $('agendaEditor').hidden = true; $('agendaContent').hidden = false;
     render(); if (!$('agendaDialog').open) $('agendaDialog').showModal();
     sync().catch(()=>{});
     if (id === 'digest') setTimeout(()=>$('agendaDigestHeading')?.scrollIntoView({block:'start'}),100);
   }
-  function editor(job = null) {
-    $('agendaEditorStatus').textContent = '';
-    editing = job || { id: null, items: [{key:'manual',kind:'activity',title:'',localTime:local(Date.now()),localEnd:null,location:'',evidence:'',question:''}] };
-    const result = job?.result || editing;
-    $('agendaContent').hidden=true; $('agendaEditor').hidden=false;
-    $('agendaSource').replaceChildren();
-    if(job?.id){for(const image of job.images||[{position:1,url:'/imports/'+encodeURIComponent(job.id)+'/image'}]){const link=document.createElement('a');link.href=image.url;link.target='_blank';link.rel='noopener';link.textContent='查看图 '+image.position+'（保留 72 小时）';$('agendaSource').append(link,document.createTextNode(' '));}}
-    $('agendaCandidates').innerHTML = `<p>${esc(result.summary || '所有时间均为北京时间。活动默认向后三小时，DDL 默认向前三小时。')}</p>` + result.items.map((v,i)=>`<fieldset class="agenda-candidate" data-index="${i}"><label class="agenda-check"><input type="checkbox" name="selected" checked /> 导入此项</label><label>类型<select name="kind"><option value="activity" ${v.kind==='activity'?'selected':''}>活动</option><option value="deadline" ${v.kind==='deadline'?'selected':''}>DDL</option></select></label><label>标题<input name="title" maxlength="100" value="${esc(v.title)}" /></label><label>开始 / 截止时间<input name="time" type="datetime-local" value="${esc(v.localTime||'')}" /></label><label>明确的活动结束时间（可选）<input name="end" type="datetime-local" value="${esc(v.localEnd||'')}" /></label><label>地点<input name="location" maxlength="200" value="${esc(v.location)}" /></label>${v.question?`<p class="agenda-question">待核实：${esc(v.question)}</p>`:''}${v.evidence?`<p>${esc(v.evidence)}</p>`:''}${sourceLabel(v)}<output class="agenda-window"></output></fieldset>`).join('') || '<p>未识别到事项。可返回后手动添加。</p>';
+  function windowText(value) {
+    const w=A.windows(value);
+    return `占用 ${A.format(w.from)}—${A.format(w.to)}；实线 ${A.format(w.coreFrom)}—${A.format(w.coreTo)}。完成或结束前持续占用健身时间。`;
+  }
+  function review(job) {
+    const switching=editing?.id!==job.id,wasGenerating=['queued','running'].includes(editing?.status);
+    if(!switching&&wasGenerating&&job.status==='review')$('agendaReviewStatus').textContent='已重新生成，请审核此事项。';
+    editing=job;$('agendaStatus').hidden=true;$('agendaUploadPanel').hidden=true;$('agendaContent').hidden=true;$('agendaEditor').hidden=true;$('agendaReview').hidden=false;
+    if(switching){const draft=read('neu-agenda-feedback-'+job.id,null);$('agendaFeedback').value=draft?.text||'';$('agendaReviewStatus').textContent='';}
+    const result=job.result,one=result?.items?.length===1?result.items[0]:null;
+    let schedule='',valid=false;
+    if(one?.localTime&&!one.question?.trim())try{const v=A.normalizeItem({...one,anchorAt:A.localTime(one.localTime),explicitEndAt:one.localEnd?A.localTime(one.localEnd):null});schedule=windowText(v);valid=true;}catch(error){schedule=error.message;}
+    const pending=['queued','running'].includes(job.status);
+    const heading=pending?'正在生成此申请的新版本':job.status==='failed'?'生成未完成':job.status==='applied'?'此申请已入表':'生成事项 · 请审核';
+    $('agendaReviewResult').innerHTML=`<h3>${heading}</h3>${pending?'<p>正在根据申请和反馈重新生成，请稍候。</p>':''}${one?`${pending?'<p>上一版结果（正在改写）</p>':''}<article class="agenda-card"><strong>${one.kind==='deadline'?'DDL':'活动'} · ${esc(one.title)}</strong><p>${esc(one.localTime?.replace('T',' ')||'时间待确认')}（北京时间）${one.localEnd?'—'+esc(one.localEnd.replace('T',' ')):''}${one.location?' · '+esc(one.location):''}</p><p>${esc(schedule)}</p>${one.question?`<p class="agenda-question">需要反馈：${esc(one.question)}</p>`:''}<p>${esc(result.summary)}</p><p>${esc(one.evidence)}</p>${sourceLabel(one)}</article>`:result?'<p>这份旧申请包含多个候选，请针对本申请反馈目标事项，重新生成一份结果。</p>':'<p>本申请只生成一份事项，无需逐字段填写。</p>'}${job.error?`<p>${esc(job.error)}</p>`:''}<p>${(job.images||[]).map(image=>`<a target="_blank" rel="noopener" href="${esc(image.url)}">查看图 ${image.position}</a>`).join(' ')}${job.expiresAt<=Date.now()?'（原图已过期，保留的文字证据仍可用于反馈）':'（原图保留 72 小时）'}</p>${job.feedback?.length?`<details><summary>本申请的反馈记录 · ${job.feedback.length}</summary>${job.feedback.map(f=>`<p>${esc(f.text)}</p>`).join('')}</details>`:''}`;
+    $('agendaConfirm').hidden=job.status!=='review';$('agendaConfirm').disabled=!valid;
+    $('agendaConfirm').textContent=job.linkedItemIds?.length?'确认更新此事项':'确认此事项入表';
+    const target=state.items.find(v=>job.linkedItemIds?.includes(v.id)),ended=target&&(target.resolvedAt!=null||target.cancelledAt!=null);
+    $('agendaSendFeedback').disabled=job.status==='cancelled'||ended||job.linkedItemIds?.length>1;
+    if(ended)$('agendaReviewStatus').textContent='此事项已完成或取消，不能通过反馈重新安排。';
+  }
+  function editor() {
+    $('agendaEditorStatus').textContent='';$('agendaStatus').hidden=true;$('agendaUploadPanel').hidden=true;$('agendaReview').hidden=true;
+    editing={id:null,items:[{key:'manual',kind:'activity',title:'',localTime:local(Date.now()),localEnd:null,location:'',evidence:''}]};
+    $('agendaContent').hidden=true;$('agendaEditor').hidden=false;$('agendaSource').textContent='手动添加一份事项。所有时间均为北京时间。';
+    $('agendaCandidates').innerHTML=`<fieldset class="agenda-candidate" data-index="0"><label>类型<select name="kind"><option value="activity">活动</option><option value="deadline">DDL</option></select></label><label>标题<input name="title" maxlength="100" required /></label><label>开始 / 截止时间<input name="time" type="datetime-local" value="${local(Date.now())}" required /></label><label>明确的活动结束时间（可选）<input name="end" type="datetime-local" /></label><label>地点<input name="location" maxlength="200" /></label><output class="agenda-window"></output></fieldset>`;
     preview();
   }
   function fields(fieldset) {
@@ -98,23 +121,48 @@
     $('agendaRefresh').addEventListener('click',()=>sync().catch(()=>{}));
     $('agendaManual').addEventListener('click',()=>editor());
     $('agendaBack').addEventListener('click',()=>open());
+    $('agendaReviewBack').addEventListener('click',()=>open());
+    $('agendaFeedback').addEventListener('input',()=>{
+      if(!editing?.id)return;
+      const key='neu-agenda-feedback-'+editing.id,old=read(key,null),text=$('agendaFeedback').value;
+      localStorage.setItem(key,JSON.stringify(old?.text===text?old:{text}));
+    });
+    $('agendaSendFeedback').addEventListener('click',async()=>{
+      const job=editing;if(!job?.id)return;
+      const button=$('agendaSendFeedback');button.disabled=true;
+      try{
+        const text=$('agendaFeedback').value.trim();if(!text)throw Error('请说明这份事项需要怎样修改');
+        const key='neu-agenda-feedback-'+job.id,old=read(key,null);
+        const value=old?.id&&old.text===text&&old.revision===job.revision?old:{id:uuid(),revision:job.revision,text};
+        localStorage.setItem(key,JSON.stringify(value));
+        const updated=await request('/imports/'+job.id+'/feedback',value);
+        localStorage.removeItem(key);$('agendaFeedback').value='';
+        state.imports=state.imports.map(v=>v.id===job.id?updated:v);save();
+        review(updated);$('agendaReviewStatus').textContent='反馈已提交，正在重新生成这一份事项。';await sync();
+      }catch(error){$('agendaReviewStatus').textContent=error.message;if(error.status===409)await sync().catch(()=>{});}
+      finally{button.disabled=false;}
+    });
+    $('agendaConfirm').addEventListener('click',async()=>{
+      const job=editing;if(!job?.id)return;
+      const button=$('agendaConfirm');button.disabled=true;
+      try{await request('/agenda/commit',{id:uuid(),type:'apply',importId:job.id,revision:job.revision});message=job.linkedItemIds?.length?'原事项已更新。':'此事项已入表。';open();}
+      catch(error){$('agendaReviewStatus').textContent=error.message;if(error.status===409)await sync().catch(()=>{});}
+      finally{button.disabled=false;}
+    });
     $('agendaCandidates').addEventListener('input',preview);
     window.AgendaUpload?.init(text=>{message=text;render();},()=>sync()).catch(error=>{message=error.message;render();});
     $('agendaEditor').addEventListener('submit',async event=>{
       event.preventDefault();
       try {
-        const items=[...$('agendaCandidates').querySelectorAll('fieldset')].filter(f=>f.querySelector('[name="selected"]').checked).map(fields);
-        if(!items.length) throw Error('请至少选择一项，或返回取消导入');
-        const op={id:uuid(),type:editing.id?'apply':'create',items};
-        if(editing.id) {op.importId=editing.id;op.revision=editing.revision;await request('/agenda/commit',op);message='所选事项已入表。';}
-        else {enqueue(op);message='事项已添加。';}
+        const items=[...$('agendaCandidates').querySelectorAll('fieldset')].map(fields);
+        enqueue({id:uuid(),type:'create',items});message='事项已添加。';
         open();
       } catch(error) {$('agendaEditorStatus').textContent=error.message;}
     });
     $('agendaContent').addEventListener('click',async event=>{
       const b=event.target.closest('button');if(!b)return;
       try {
-        if(b.dataset.agendaReview) {const job=state.imports.find(v=>v.id===b.dataset.agendaReview);if(job)editor(job);return;}
+        if(b.dataset.agendaReview) {const job=state.imports.find(v=>v.id===b.dataset.agendaReview);if(job)review(job);return;}
         if(b.dataset.importCancel) {await request('/imports/'+b.dataset.importCancel+'/cancel',{});await sync();return;}
         const id=b.dataset.agendaResolve||b.dataset.agendaCancel;
         if(id) {enqueue({id:uuid(),type:b.dataset.agendaResolve?'resolve':'cancel',itemId:id,at:Date.now()});message='已记录，正在同步。';render();}
@@ -123,7 +171,7 @@
     window.addEventListener('online',()=>sync().catch(()=>{}));
     window.addEventListener('focus',()=>sync().catch(()=>{}));
     document.addEventListener('visibilitychange',()=>{if(!document.hidden)sync().catch(()=>{});});
-    setInterval(()=>{if(!document.hidden){if($('agendaDialog').open&&!editing)render();sync().catch(()=>{});}},60000);
+    setInterval(()=>{if(!document.hidden){if($('agendaDialog').open&&!editing)render();const delay=$('agendaDialog').open&&state.imports.some(v=>['queued','running'].includes(v.status))?15000:60000;if(Date.now()-lastSync>=delay)sync().catch(()=>{});}},15000);
     sync().catch(()=>{});
     if(new URLSearchParams(location.search).has('agenda'))open('digest');
   }

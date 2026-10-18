@@ -572,3 +572,6 @@ h2 { margin: 0; font-size: 17px; line-height: 1.2; }
 .agenda-image-preview .push-actions button { min-width: 0; padding: 5px 7px; font-size: 11px; }
 #agendaSelectionStatus { font-size: 12px; line-height: 1.5; margin: 0; color: #506780; }
 #agendaSource a { display: inline-block; margin: 0 8px 6px 0; }
+
+.agenda-feedback { display:grid; gap:10px; margin-top:22px; }
+.agenda-feedback textarea { width:100%; box-sizing:border-box; font:inherit; padding:10px; border:1px solid var(--line,#ddd); border-radius:10px; }
