@@ -258,7 +258,6 @@
     const now = nowDate();
     $('headerMeta').textContent = `${fmtHeader.format(now)} · ${D.semester.name}`;
     $('jumpToday').hidden = viewMode === 'gym' || selectedWeek === currentWeek() && selectedDay === mondayIndex(now);
-    $('toolbarNote').textContent = viewMode === 'gym' ? '' : selectedWeek === currentWeek() ? '本周' : `第 ${selectedWeek} 周`;
   }
 
   function renderWeekCard() {
@@ -361,11 +360,8 @@
         const end = timeToMinutes(time.end);
         const duration = end - start;
         const skippedToday = isSkipped(course, day, selectedWeek);
-        pieces.push(`<button class="course-block ${courseHasOverlay(meetingDayKey,start,end)?'has-extras':''} ${duration < 95 ? 'compact' : ''} ${skippedToday ? 'skipped' : ''}" type="button" data-course="${course._id}" data-day="${day}" style="top:${pct(start)}%;height:${pct(end) - pct(start)}%;--course-color:${course._color}">
+        pieces.push(`<button class="course-block ${courseHasOverlay(meetingDayKey,start,end)?'has-extras':''} ${duration < 95 ? 'compact' : ''} ${skippedToday ? 'skipped' : ''}" type="button" data-course="${course._id}" data-day="${day}" aria-label="${escapeHtml(course.name)}${skippedToday?'，已翘':''}" style="top:${pct(start)}%;height:${pct(end) - pct(start)}%;--course-color:${course._color}">
           <span class="course-title">${escapeHtml(shortCourseName(course.name, course.end - course.start + 1))}</span>
-          <span class="course-period">第${course.start}–${course.end}节</span>
-          <span class="course-time">${time.start}–${time.end}</span>
-          ${skippedToday ? '<span class="course-skip-label">已翘</span>' : ''}
         </button>`);
       }
 
@@ -575,7 +571,7 @@
     const makeup = calendar.makeups.find(item => item.target === key || item.source === key);
     const calendarNote = mark?.kind === 'holiday' ? '放假 · 当日课程取消' :
       mark?.kind === 'makeup' ? `补课 · 调自 ${makeup.source}` :
-      mark?.kind === 'moved' ? `课程已调至 ${makeup.target}` : '可为本学期日期设置放假或调休';
+      mark?.kind === 'moved' ? `课程已调至 ${makeup.target}` : '';
     const courses = rawCourses(selectedDay, selectedWeek);
     const skippedCourses = courses.filter(course => isSkipped(course, selectedDay, selectedWeek));
     const state = dayState(date, courses.filter(course => !isSkipped(course, selectedDay, selectedWeek)), skippedCourses);
@@ -586,14 +582,14 @@
     $('dayDashboard').innerHTML = `
       <div class="dashboard-date"><strong>${weekdayLong[selectedDay]} · ${fmtMD.format(date)}</strong><span>第 ${selectedWeek} 周 · ${courses.length} 段课程${skippedCourses.length ? ` · 已翘 ${skippedCourses.length}` : ''}${meetingStore.forDay(key).length ? ` · 组会 ${meetingStore.forDay(key).length}` : ''}</span></div>
       <div class="calendar-bar"><span>${escapeHtml(calendarNote)}</span><div class="calendar-bar-actions"><button type="button" data-calendar-open>放假／调休</button></div></div>
-      <div class="now-row">
+      ${state.live?`<div class="now-row">
         <div class="clock" aria-label="当前时间 ${minutesToTime(now.getHours() * 60 + now.getMinutes())}"><i class="hand hour" style="--rotation:${hourAngle}deg"></i><i class="hand minute" style="--rotation:${minuteAngle}deg"></i><i class="clock-center"></i></div>
-        <div class="now-text"><span class="clock-digital">${minutesToTime(now.getHours() * 60 + now.getMinutes())}</span><h2>${escapeHtml(state.title)}</h2><p>${escapeHtml(state.subtitle)}</p></div>
-      </div>
+        <div class="now-text"><span class="clock-digital">${minutesToTime(now.getHours() * 60 + now.getMinutes())}</span><h2>${escapeHtml(state.title)}</h2></div>
+      </div>`:''}
       ${state.notices.length ? `<div class="event-notices">${state.notices.map(n => `<div class="event-notice ${n.kind}"><span class="notice-dot"></span><span>${escapeHtml(n.text)}</span>${n.note ? `<small>${escapeHtml(n.note)}</small>` : ''}</div>`).join('')}</div>` : ''}
       ${state.actions ? `<div class="dashboard-actions">${state.actions}</div>` : ''}
-      ${state.live && skipCount ? `<div class="undo-bar"><button type="button" class="undo-trigger" id="undoTrigger">默认已翘 ${skipCount} 节 · 单节恢复</button><button type="button" class="undo-all" data-undo-all>恢复今日全部课程</button></div>` : ''}`;
-    const parts = ['<div class="map-heading"><strong>当日时间图</strong><span>00:00–24:00 · 课程与健身房</span></div><div class="day-map-inner"><div class="map-axis">'];
+      ${state.live && skipCount ? `<div class="undo-bar"><button type="button" class="undo-trigger" id="undoTrigger">已翘 ${skipCount} 节</button><button type="button" class="undo-all" data-undo-all>恢复今日全部课程</button></div>` : ''}`;
+    const parts = [(window.AgendaClient?.daySummary?.(key)||'')+'<div class="day-map-inner"><div class="map-axis">'];
     parts.push('<div class="day-endpoint first" style="top:0%">00:00</div><div class="day-endpoint last" style="top:100%">24:00</div>');
     for (let n = 1; n <= 12; n++) {
       const [start, end] = D.periods[n];
@@ -612,8 +608,8 @@
       const t = periodTime(course);
       const start = timeToMinutes(t.start), end = timeToMinutes(t.end);
       const skippedToday = isSkipped(course, selectedDay, selectedWeek);
-      parts.push(`<button type="button" class="map-course ${courseHasOverlay(key,start,end)?'has-extras ':''}${skippedToday ? 'skipped' : ''}" data-course="${course._id}" style="top:${pct(start)}%;height:${pct(end) - pct(start)}%;--course-color:${course._color}">
-        <strong>${escapeHtml(course.name)}${skippedToday ? ' · 已翘' : ''}</strong><span>第${course.start}–${course.end}节 · ${t.start}–${t.end}</span><span>${escapeHtml(course.location)}${course.className ? ` · ${escapeHtml(course.className)}` : ''}${course.note ? ` · ${escapeHtml(course.note)}` : ''}</span>
+      parts.push(`<button type="button" class="map-course ${courseHasOverlay(key,start,end)?'has-extras ':''}${skippedToday ? 'skipped' : ''}" data-course="${course._id}" data-compact="${end-start<65}" style="top:${pct(start)}%;height:${pct(end) - pct(start)}%;--course-color:${course._color}">
+        <strong>${escapeHtml(course.name)}${skippedToday ? ' · 已翘' : ''}</strong><span class="map-course-time">${t.start}–${t.end}</span><span class="map-course-location">${escapeHtml(course.location)}</span>
       </button>`);
     }
     parts.push(nonCourseBlocks(key,'day'));
@@ -650,10 +646,7 @@
       detail('状态', meetingLabel(meeting), true),
       ...(meeting.endAt !== null ? [detail('认定结束', meetingClock(meeting.endAt), true)] : [])
     ].join('');
-    $('meetingDetailStatus').textContent = meeting.endReason === 'late'
-      ? '在五小时认定窗口之后才确认，实际结束时间未知；记录按五小时截断。'
-      : meeting.endAt === null ? '实线代表预计时间，虚线代表弹性窗口。组会不提供翘课操作。'
-      : '手动结束时间已保存，剩余预留窗口已释放。';
+    $('meetingDetailStatus').textContent = meeting.endReason==='late'?'延后确认 · 认定时长 5 小时':'';
     $('meetingEndButton').hidden = meeting.endAt !== null || Date.now() < meeting.startAt;
     $('meetingCancelButton').hidden = meeting.endAt !== null || Date.now() >= meeting.startAt;
     if (!$('meetingDetailDialog').open) $('meetingDetailDialog').showModal();
@@ -1109,7 +1102,7 @@
     pushStatus('正在建立订阅…');
     try {
       const config = await pushRequest('/config');
-      const registration = await navigator.serviceWorker.register('./sw.js?v=33', { updateViaCache: 'none' });
+      const registration = await navigator.serviceWorker.register('./sw.js?v=34', { updateViaCache: 'none' });
       let subscription = await registration.pushManager.getSubscription();
       if (subscription) {
         const oldKey = subscription.options?.applicationServerKey;
@@ -1221,7 +1214,7 @@
       </button>`;
     }).join('');
     panel.innerHTML = `
-      <div class="gym-pane-head"><strong>健身记录</strong><span>独立记录实际训练</span></div>
+      <div class="gym-pane-head"><strong>健身记录</strong></div>
       <section class="gym-section gym-live">
         <div class="gym-section-head">当前状态</div>
         <div class="gym-live-content">
@@ -1238,17 +1231,17 @@
       <section class="gym-section">
         <div class="gym-section-head">训练趋势</div>
         <div class="gym-chart-controls"><label>范围 <select id="gymChartWeeks"><option value="4" ${gymChartWeeks === 4 ? 'selected' : ''}>4 周</option><option value="12" ${gymChartWeeks === 12 ? 'selected' : ''}>12 周</option><option value="52" ${gymChartWeeks === 52 ? 'selected' : ''}>1 年</option><option value="0" ${gymChartWeeks === 0 ? 'selected' : ''}>全部</option></select></label><label>指标 <select id="gymChartMetric"><option value="duration" ${gymChartMetric === 'duration' ? 'selected' : ''}>总时长</option><option value="count" ${gymChartMetric === 'count' ? 'selected' : ''}>次数</option><option value="average" ${gymChartMetric === 'average' ? 'selected' : ''}>平均时长</option></select></label></div>
-        ${sessions.length ? `<div class="gym-chart-scroll"><div class="gym-chart" style="--chart-count:${weekCount}">${chart.map(item => `<div class="gym-chart-column" title="${item.label} 当周：${item.value} ${metricUnit}"><span class="gym-chart-value">${item.value}</span><div class="gym-chart-bar" style="height:${item.value ? Math.max(3, Math.round(item.value / max * 112)) : 0}px"></div><span class="gym-chart-label">${item.label}</span></div>`).join('')}</div></div>` : '<p class="gym-chart-empty">完成第一段训练后，这里会显示每周趋势。</p>'}
+        ${sessions.length ? `<div class="gym-chart-scroll"><div class="gym-chart" style="--chart-count:${weekCount}">${chart.map(item => `<div class="gym-chart-column" title="${item.label} 当周：${item.value} ${metricUnit}"><span class="gym-chart-value">${item.value}</span><div class="gym-chart-bar" style="height:${item.value ? Math.max(3, Math.round(item.value / max * 112)) : 0}px"></div><span class="gym-chart-label">${item.label}</span></div>`).join('')}</div></div>` : '<p class="gym-chart-empty">暂无趋势</p>'}
         <div class="gym-chart-unit">每周${gymChartMetric === 'count' ? '训练次数' : gymChartMetric === 'average' ? '平均训练时长' : '训练总时长'} · ${metricUnit}</div>
       </section>
       <section class="gym-section">
         <div class="gym-section-head">${gymShowAll ? '全部训练' : '最近训练'} <span>${completed.length} 条已完成</span></div>
         <div class="gym-history-head"><span>日期</span><span>起止</span><span>时长</span></div>
-        ${rows || '<p class="gym-empty">还没有训练记录。</p>'}
+        ${rows || '<p class="gym-empty">暂无记录</p>'}
         ${completed.length > 6 ? `<button class="gym-more" type="button" data-gym-command="toggle-all">${gymShowAll ? '收起记录' : '查看全部'}</button>` : ''}
       </section>
       <div class="gym-data-actions"><button type="button" data-gym-command="export">导出记录</button><button type="button" data-gym-command="import">导入记录</button><input id="gymImportFile" type="file" accept="application/json,.json" hidden /></div>
-      <p class="gym-message" role="status">${escapeHtml(gymMessage || (cloud?.connected() ? '训练记录已接入云端，可导出备份。' : '连接云端后可跨设备保存训练记录；本机仍可导出备份。'))}</p>`;
+      <p class="gym-message" role="status">${escapeHtml(gymMessage)}</p>`;
     panel.scrollTop = scrollTop;
   }
 
@@ -1294,9 +1287,9 @@
     setupCalendar();
     setupPush();
     window.AgendaClient?.init(() => { renderAll(); schedulePushSync(); },{openMeeting});
-    document.addEventListener('click', event => { if(event.target.closest('[data-agenda-open]')) window.AgendaClient?.open(); });
+    document.addEventListener('click', event => { const button=event.target.closest('[data-agenda-open]');if(button)window.AgendaClient?.open(button.dataset.agendaOpen); });
     $('cloudButton').addEventListener('click', () => {
-      cloudStatus(cloud?.connected() ? '云端已连接；可手动刷新数据' : '请使用通行密钥登录');
+      cloudStatus(cloud?.connected() ? '已连接' : '请使用通行密钥登录');
       $('cloudDialog').showModal();
     });
     $('closeCloudDialog').addEventListener('click', () => $('cloudDialog').close());
@@ -1316,7 +1309,7 @@
     renderAll();
     initCloud();
     clearAttentionBadge();
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js?v=33', { updateViaCache: 'none' }).then(schedulePushSync).catch(() => {});
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js?v=34', { updateViaCache: 'none' }).then(schedulePushSync).catch(() => {});
     setInterval(() => {
       if (refreshDailyState()) { renderAll(); return; }
       renderHeader();

@@ -29,8 +29,8 @@
     $('agendaNote').disabled=busy||Boolean(draft.serverId);
     $('agendaUpload').disabled=busy||!draft.images.length;
     $('agendaDiscard').disabled=busy||!draft.images.length;
-    $('agendaUpload').textContent=draft.serverId?'继续上传并生成':'生成一份事项';
-    $('agendaSelectionStatus').textContent=draft.images.length?`${draft.images.length} / ${MAX_IMAGES} 张 · ${(draft.images.reduce((sum,image)=>sum+image.blob.size,0)/1024/1024).toFixed(1)} MB${draft.serverId?' · 上传未完成，重试只补传缺图':''}`:'一份申请只生成一项，可多次选图补充上下文。最多 8 张，压缩后合计 20 MB。';
+    $('agendaUpload').textContent=draft.serverId?'继续上传':'识别';
+    $('agendaSelectionStatus').textContent=draft.images.length?`${draft.images.length} / ${MAX_IMAGES} 张 · ${(draft.images.reduce((sum,image)=>sum+image.blob.size,0)/1024/1024).toFixed(1)} MB${draft.serverId?' · 待补传':''}`:'';
     draft.images.forEach((image,index)=>{
       const card=document.createElement('article');card.className='agenda-image-preview';
       const preview=document.createElement('img');preview.src=URL.createObjectURL(image.blob);urls.push(preview.src);preview.alt='图 '+(index+1);preview.loading='lazy';
@@ -74,7 +74,7 @@
       if(next.reduce((sum,v)=>sum+v.byteLength,0)>MAX_TOTAL)throw Error('本批图片压缩后超过 20 MB，请减少图片');
     }
     await persist({...draft,note:$('agendaNote').value,images:next,createdAt:draft.images.length?draft.createdAt:Date.now()});
-    report(duplicates?'已忽略重复图片；请核对图片顺序后提交。':'图片草稿已保存，请核对顺序后提交。');
+    report(duplicates?'重复图片已跳过':'已选图');
   }
   async function upload() {
     if(!draft.images.length)throw Error('请先选择图片');
@@ -96,13 +96,13 @@
       }
       await window.ScheduleAuth.request('/imports/'+row.id+'/submit',{});
     }
-    await reset();report('整批图片已提交，等待本机联合识别。可关闭面板稍后查看。');await submitted();
+    await reset();report('已提交');await submitted();
   }
   async function init(status,onSubmitted) {
     report=status;submitted=onSubmitted;
     $('agendaImage').addEventListener('change',event=>{const files=[...event.target.files];event.target.value='';if(files.length)run(()=>add(files));});
     $('agendaUpload').addEventListener('click',()=>run(upload));
-    $('agendaDiscard').addEventListener('click',()=>run(async()=>{if(draft.serverId)await window.ScheduleAuth.request('/imports/'+draft.serverId+'/cancel',{});await reset();report('本批图片草稿已取消。');await submitted();}));
+    $('agendaDiscard').addEventListener('click',()=>run(async()=>{if(draft.serverId)await window.ScheduleAuth.request('/imports/'+draft.serverId+'/cancel',{});await reset();report('已清空');await submitted();}));
     $('agendaNote').addEventListener('change',()=>{if(!draft.serverId&&!busy)persist({...draft,note:$('agendaNote').value}).catch(error=>report(error.message));});
     $('agendaImageList').addEventListener('click',event=>{
       const button=event.target.closest('[data-image-action]');if(!button)return;
@@ -118,7 +118,7 @@
     try{const saved=await storage();if(saved&&Array.isArray(saved.images)){if(saved.createdAt>Date.now()-72*3600000)draft=saved;else await reset();}$('agendaNote').value=draft.note;}
     catch(error){report(error.message);}
     finally{busy=false;render();}
-    setInterval(()=>{if(!busy&&draft.images.length&&Date.now()-draft.createdAt>=72*3600000)run(async()=>{await reset();report('过期的本地图片草稿已清理。');});},60000);
+    setInterval(()=>{if(!busy&&draft.images.length&&Date.now()-draft.createdAt>=72*3600000)run(async()=>{await reset();report('草稿已过期');});},60000);
   }
   window.AgendaUpload={init};
 })();

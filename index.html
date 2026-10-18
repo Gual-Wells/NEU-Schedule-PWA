@@ -10,17 +10,17 @@
   <meta name="apple-mobile-web-app-title" content="课表" />
   <meta name="format-detection" content="telephone=no" />
   <title>课表</title>
-  <link rel="manifest" href="./manifest.webmanifest?v=33" />
+  <link rel="manifest" href="./manifest.webmanifest?v=34" />
   <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
   <link rel="icon" href="./icons/icon-192.png" />
-  <link rel="stylesheet" href="./styles.css?v=33" />
+  <link rel="stylesheet" href="./styles.css?v=34" />
 </head>
 <body>
   <main class="app-shell" id="app">
     <header class="app-header">
-      <div>
+      <div class="header-brand">
         <p class="header-meta" id="headerMeta"></p>
-        <h1>个人课表 <small>NEU SCHEDULE</small></h1>
+        <h1>个人课表</h1>
       </div>
       <div class="header-actions"><button class="ghost-button" id="agendaButton" type="button">事项</button><button class="ghost-button" id="cloudButton" type="button">云端</button><button class="ghost-button" id="pushSettingsButton" type="button">提醒</button><button class="ghost-button" id="jumpToday" type="button" hidden>回到今天</button></div>
     </header>
@@ -43,10 +43,6 @@
         <button class="segment" data-mode="day" type="button">日程</button>
         <button class="segment" data-mode="gym" type="button">健身</button>
       </div>
-      <div class="toolbar-side">
-        <div class="legend-chip"><span class="legend-swatch odd"></span><span class="legend-swatch even"></span><span>健身房开放</span></div>
-        <span class="toolbar-note" id="toolbarNote"></span>
-      </div>
     </section>
 
     <section class="panel active week-panel" id="weekPanel">
@@ -55,7 +51,6 @@
           <div class="timeline-grid" id="timelineGrid"></div>
         </div>
       </div>
-      <p class="micro-copy">左侧每节对应起止时间 · 课程标出所跨节次 · 交替浅色为健身房开放</p>
     </section>
 
     <section class="panel day-panel" id="dayPanel">
@@ -68,17 +63,16 @@
 
   <dialog id="agendaDialog" class="sheet-dialog">
     <div class="sheet agenda-sheet">
-      <div class="sheet-head"><div><span class="sheet-kicker">DDL · 活动 · 组会汇总</span><h2>事项与图片导入</h2></div><button type="button" class="close-button" id="closeAgenda" aria-label="关闭">×</button></div>
-      <p class="meeting-explainer">明确时刻的活动向后三小时、DDL 向前三小时；只有日期时按全天预留。实线一小时、虚线两小时；点击达成或结束前，会持续占用健身时间。组会保留原有 3+2 小时显示。</p>
-      <div id="agendaUploadPanel" class="agenda-upload"><label>选择通知截图（可多选、追加）<input id="agendaImage" type="file" accept="image/png,image/jpeg,image/webp" multiple /></label><p id="agendaSelectionStatus" role="status"></p><div id="agendaImageList" class="agenda-image-list"></div><label>本次要安排的事项（可选）<input id="agendaNote" maxlength="800" placeholder="例如：论文任务的补充通知，更新截止时间并保留原有要求" /></label><div class="push-actions"><button type="button" id="agendaUpload" disabled>生成一份事项</button><button type="button" id="agendaDiscard" disabled>取消本批图片</button><button type="button" id="agendaManual">手动添加</button></div></div>
-      <div class="push-actions"><button type="button" id="agendaRefresh">刷新状态</button></div>
+      <div class="sheet-head"><div><h2>事项</h2></div><button type="button" class="close-button" id="closeAgenda" aria-label="关闭">×</button></div>
+      <div id="agendaUploadPanel" class="agenda-upload"><label>截图<input id="agendaImage" type="file" accept="image/png,image/jpeg,image/webp" multiple /></label><p id="agendaSelectionStatus" role="status"></p><div id="agendaImageList" class="agenda-image-list"></div><label>备注<input id="agendaNote" maxlength="800" placeholder="补充信息" /></label><div class="push-actions"><button type="button" id="agendaUpload" disabled>识别</button><button type="button" id="agendaDiscard" disabled>清空</button><button type="button" id="agendaManual">手动添加</button></div></div>
+      <div class="push-actions"><button type="button" id="agendaRefresh">刷新</button></div>
       <p id="agendaStatus" role="status" class="calendar-status"></p>
       <div id="agendaContent"></div>
       <section id="agendaReview" hidden aria-label="事项申请审核">
         <div id="agendaReviewResult"></div>
         <p id="agendaReviewStatus" role="status"></p>
         <div class="push-actions"><button type="button" id="agendaConfirm">确认此事项入表</button><button type="button" id="agendaReviewBack">返回</button></div>
-        <div class="agenda-feedback"><label for="agendaFeedback">对这份申请反馈修改</label><textarea id="agendaFeedback" maxlength="2000" rows="3" placeholder="例如：要安排的是论文提交，截图里的讲座是干扰信息；截止时间以老师最后一条通知为准。"></textarea><button type="button" id="agendaSendFeedback">提交反馈并重新生成</button><small>反馈始终修订此申请；新结果确认前，已入表安排继续生效。</small></div>
+        <div class="agenda-feedback"><label for="agendaFeedback">反馈</label><textarea id="agendaFeedback" maxlength="2000" rows="3" placeholder="修改要求"></textarea><button type="button" id="agendaSendFeedback">重新识别</button></div>
       </section>
       <form id="agendaEditor" hidden><p id="agendaSource"></p><div id="agendaCandidates"></div><p id="agendaEditorStatus" role="status"></p><div class="push-actions"><button type="submit">添加事项</button><button type="button" id="agendaBack">返回</button></div></form>
     </div>
@@ -91,7 +85,6 @@
       <div class="sheet-grabber"></div>
       <div class="sheet-head">
         <div>
-          <span class="sheet-kicker">课程详情</span>
           <h2 id="courseDetailTitle"></h2>
         </div>
         <button class="close-button" value="cancel" aria-label="关闭">×</button>
@@ -103,7 +96,7 @@
 
   <dialog id="meetingDetailDialog" class="sheet-dialog">
     <div class="sheet">
-      <div class="sheet-head"><div><span class="sheet-kicker">组会 · 独立生命周期</span><h2 id="meetingDetailTitle">组会</h2></div><button class="close-button" type="button" id="closeMeetingDetail" aria-label="关闭">×</button></div>
+      <div class="sheet-head"><div><h2 id="meetingDetailTitle">组会</h2></div><button class="close-button" type="button" id="closeMeetingDetail" aria-label="关闭">×</button></div>
       <div class="detail-grid" id="meetingDetailBody"></div>
       <p id="meetingDetailStatus" class="meeting-explainer" role="status"></p>
       <div class="push-actions"><button type="button" id="meetingEndButton" hidden>结束组会</button><button type="button" id="meetingCancelButton" hidden>取消安排</button></div>
@@ -115,7 +108,6 @@
       <div class="sheet-grabber"></div>
       <div class="sheet-head">
         <div>
-          <span class="sheet-kicker">教学周</span>
           <h2>跳到某一周</h2>
         </div>
         <button class="close-button" value="cancel" aria-label="关闭">×</button>
@@ -126,15 +118,15 @@
 
   <dialog id="calendarDialog" class="sheet-dialog">
     <div class="sheet calendar-sheet">
-      <div class="sheet-head"><div><span class="sheet-kicker">本学期安排</span><h2>放假与调休</h2></div><button class="close-button" id="closeCalendarDialog" type="button" aria-label="关闭">×</button></div>
+      <div class="sheet-head"><div><h2>放假与调休</h2></div><button class="close-button" id="closeCalendarDialog" type="button" aria-label="关闭">×</button></div>
       <section class="calendar-section">
-        <strong>放假</strong><p>选一天或一段日期。放假日取消课程，健身房开放时间仍按当天显示。</p>
+        <strong>放假</strong>
         <div class="calendar-fields"><label>开始日期<input id="holidayStart" type="date" /></label><label>结束日期<input id="holidayEnd" type="date" /></label></div>
         <button class="calendar-command" id="addHoliday" type="button">设为放假</button>
       </section>
       <section class="calendar-section">
-        <strong>调休补课</strong><p>先选原本无课程的补课日，再选原课程日。课程会从后者搬到前者。</p>
-        <div class="calendar-fields"><label>① 补课目标 · 无课程日<input id="makeupTarget" type="date" /></label><label>② 原课程日<input id="makeupSource" type="date" /></label></div>
+        <strong>调休补课</strong>
+        <div class="calendar-fields"><label>补课日期<input id="makeupTarget" type="date" /></label><label>原课程日期<input id="makeupSource" type="date" /></label></div>
         <button class="calendar-command" id="addMakeup" type="button">确认调休</button>
       </section>
       <p class="calendar-status" id="calendarStatus" role="status"></p>
@@ -145,9 +137,7 @@
   <dialog id="pushDialog" class="sheet-dialog">
     <div class="sheet push-sheet">
       <div class="sheet-grabber"></div>
-      <div class="sheet-head"><div><span class="sheet-kicker">后台推送</span><h2>课程、健身与事项提醒</h2></div><button class="close-button" id="closePushDialog" type="button" aria-label="关闭">×</button></div>
-      <p class="push-help">iPhone 请先把课表加入主屏幕，再从主屏幕打开。开启后，Cloudflare 会按课表时间发送系统通知。</p>
-      <p class="push-help">想让解锁时的横幅留到手动处理：在 iPhone“设置 → 通知 → 课表”中打开锁定屏幕、通知中心和横幅；如果显示“横幅风格”，选择“持续”。这个设置由 iPhone 控制，课表无法代你更改。</p>
+      <div class="sheet-head"><div><h2>提醒</h2></div><button class="close-button" id="closePushDialog" type="button" aria-label="关闭">×</button></div>
       <p class="push-status" id="pushStatus" role="status"></p>
       <div class="push-actions"><button id="enablePush" type="button">开启后台提醒</button><button id="testPush" type="button">发送测试</button><button id="disablePush" type="button">关闭提醒</button></div>
     </div>
@@ -155,8 +145,7 @@
 
   <dialog id="cloudDialog" class="sheet-dialog">
     <div class="sheet push-sheet">
-      <div class="sheet-head"><div><span class="sheet-kicker">数据同步</span><h2>云端课表与记录</h2></div><button class="close-button" id="closeCloudDialog" type="button" aria-label="关闭">×</button></div>
-      <p class="push-help">课程和健身房开放表从云端读取。连接后，训练记录、当天手动恢复的上课例外和页面偏好同步到云端；离线修改会在下次联网时补传。</p>
+      <div class="sheet-head"><div><h2>云端</h2></div><button class="close-button" id="closeCloudDialog" type="button" aria-label="关闭">×</button></div>
       <p class="push-status" id="cloudStatus" role="status"></p>
       <div class="push-actions"><button id="connectCloud" type="button">立即同步</button><button id="logoutCloud" type="button">退出登录</button></div>
     </div>
@@ -164,7 +153,7 @@
 
   <dialog id="sessionDialog" class="sheet-dialog">
     <form class="sheet" id="sessionForm">
-      <div class="sheet-head"><div><span class="sheet-kicker">健身记录</span><h2>修改训练时间</h2></div><button class="close-button" type="button" id="closeSessionDialog" aria-label="关闭">×</button></div>
+      <div class="sheet-head"><div><h2>修改训练时间</h2></div><button class="close-button" type="button" id="closeSessionDialog" aria-label="关闭">×</button></div>
       <label class="push-label" for="sessionStart">开始</label><input class="push-input" id="sessionStart" type="datetime-local" required />
       <label class="push-label" for="sessionEnd">结束</label><input class="push-input" id="sessionEnd" type="datetime-local" required />
       <p class="push-status" id="sessionStatus" role="status"></p>
@@ -172,14 +161,14 @@
     </form>
   </dialog>
 
-  <script src="./agenda-core.js?v=33"></script>
-  <script src="./agenda-upload.js?v=33"></script>
-  <script src="./agenda-client.js?v=33"></script>
-  <script src="./gym-store.js?v=33"></script>
-  <script src="./meeting-store.js?v=33"></script>
-  <script src="./webauthn-browser.js?v=33"></script>
-  <script src="./auth-client.js?v=33"></script>
-  <script src="./cloud-sync.js?v=33"></script>
-  <script src="./bootstrap.js?v=33"></script>
+  <script src="./agenda-core.js?v=34"></script>
+  <script src="./agenda-upload.js?v=34"></script>
+  <script src="./agenda-client.js?v=34"></script>
+  <script src="./gym-store.js?v=34"></script>
+  <script src="./meeting-store.js?v=34"></script>
+  <script src="./webauthn-browser.js?v=34"></script>
+  <script src="./auth-client.js?v=34"></script>
+  <script src="./cloud-sync.js?v=34"></script>
+  <script src="./bootstrap.js?v=34"></script>
 </body>
 </html>
