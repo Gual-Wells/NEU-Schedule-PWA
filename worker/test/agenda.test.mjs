@@ -124,4 +124,6 @@ test('digests cover rolling 72 hours and unresolved past; each daily slot delive
   const snapshot=await (await call('/agenda')).json();assert.equal(snapshot.digests.length,2);
   const large=Array.from({length:100},(_,i)=>({id:String(i),kind:'deadline',at:slot,title:'长标题'.repeat(30),state:'planned'}));
   assert(Buffer.byteLength(digestNotice(large))<3000);assert.match(digestNotice(large),/共 100 项/);
+  const escaped=large.map(v=>({...v,title:'"\\'.repeat(50)}));
+  assert(Buffer.byteLength(JSON.stringify(digestNotice(escaped)))<3000,'encoded quotes and backslashes fit the push budget');
 });

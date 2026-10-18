@@ -237,7 +237,8 @@ export async function cleanupAgenda(env, now = Date.now()) {
 export function digestNotice(entries) {
   const lines = A.digestText(entries).split('\n'); let text = '';
   for (const line of lines) {
-    if (enc.encode(text + line).length > 2700) break;
+    // Web Push encrypts the JSON payload; quotes and backslashes also consume the byte budget.
+    if (enc.encode(JSON.stringify(text + (text ? '\n' : '') + line)).length > 2700) break;
     text += (text ? '\n' : '') + line;
   }
   if (text.split('\n').length < lines.length) text += `\n共 ${entries.length} 项，打开课表查看完整清单。`;
