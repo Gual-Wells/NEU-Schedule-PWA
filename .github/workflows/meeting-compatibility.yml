@@ -22,6 +22,9 @@ jobs:
         run: |
           node --check agenda-core.js
           node --check agenda-client.js
+          node --check agenda-upload.js
+          node --check worker/src/agenda-images.js
+          node --check worker/src/agenda-wire.js
           node --check app.js
           node --check meeting-store.js
           node --check gym-store.js
@@ -54,6 +57,7 @@ jobs:
         run: |
           node worker/gateway/build.mjs
           test -s worker/gateway/dist/agenda-client.js
+          test -s worker/gateway/dist/agenda-upload.js
           test -s worker/gateway/dist/meeting-store.js
           test -s worker/gateway/dist/app.js
           test -s worker/gateway/dist/sw.js

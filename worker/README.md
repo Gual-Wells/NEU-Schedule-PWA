@@ -21,7 +21,7 @@
 
 ## 事项与图片接口
 
-新增同域登录保护的 /agenda、/agenda/commit、/imports，以及独立 Bearer 密钥保护的 /runner/*。模型只写待确认候选；Cron 每日北京时间 07:00 / 22:00 保存并发送未来三日汇总。协议、限额、本机识别任务与部署顺序见 [事项协议](../protocol/AGENDA.md)。
+新增同域登录保护的 /agenda、/agenda/commit、/imports，多图批次 /imports/batches，以及独立 Bearer 密钥保护的 /runner/*。模型只写待确认候选；Cron 每日北京时间 07:00 / 22:00 保存并发送未来三日汇总。协议、限额、本机识别任务与部署顺序见 [事项协议](../protocol/AGENDA.md)。
 
 ## 本地验证
 
