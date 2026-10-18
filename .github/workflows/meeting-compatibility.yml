@@ -2,7 +2,7 @@ name: Group meeting compatibility checks
 
 on:
   push:
-    branches: [feature/group-meetings-lifecycle]
+    branches: [feature/group-meetings-lifecycle, "codex/**"]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -15,8 +15,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
       - name: Parse browser and Worker modules
         run: |
+          node --check agenda-core.js
+          node --check agenda-client.js
           node --check app.js
           node --check meeting-store.js
           node --check gym-store.js
@@ -48,6 +53,7 @@ jobs:
       - name: Build production Pages assets
         run: |
           node worker/gateway/build.mjs
+          test -s worker/gateway/dist/agenda-client.js
           test -s worker/gateway/dist/meeting-store.js
           test -s worker/gateway/dist/app.js
           test -s worker/gateway/dist/sw.js

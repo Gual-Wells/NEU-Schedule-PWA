@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 
+const postRunner = () => fetch('https://neu-schedule-push-api.pages.dev/runner/claim',{method:'POST',body:'{}'});
 const base = 'https://neu-schedule-push-api.pages.dev';
 const html = await fetch(base + '/', { cache: 'no-store' });
 assert.equal(html.status, 200);
-assert.match(await html.text(), /auth-client\.js\?v=26/);
-const browser = await fetch(base + '/webauthn-browser.js?v=26');
+assert.match(await html.text(), /auth-client\.js\?v=29/);
+const browser = await fetch(base + '/webauthn-browser.js?v=29');
 assert.equal(browser.status, 200);
 const statusResponse = await fetch(base + '/auth/status', { cache: 'no-store' });
 assert.equal(statusResponse.status, 200);
@@ -14,6 +15,8 @@ assert.equal(status.enrollmentOpen, false);
 assert.equal(status.authenticated, false);
 assert.equal((await fetch(base + '/schedule')).status, 401);
 assert.equal((await fetch(base + '/state')).status, 401);
+assert.equal((await fetch(base + '/agenda')).status, 401);
+assert.equal((await postRunner()).status, 401);
 const post = (path, body) => fetch(base + path, {
   method: 'POST', headers: { origin: base, 'content-type': 'application/json' }, body: JSON.stringify(body)
 });

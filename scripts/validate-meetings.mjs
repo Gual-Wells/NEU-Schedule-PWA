@@ -39,8 +39,8 @@ assert.match(before, /meeting-solid/);
 assert.match(before, /meeting-extension/);
 assert.match(before, /data-meeting=/);
 const plans = model.buildPushJobs().filter(job => job.id.startsWith('meeting-'));
-assert.equal(plans.length, 4, 'group meeting produces four distinct future reminder points');
-assert.equal(new Set(plans.map(x => x.id)).size, 4);
+assert.equal(plans.length, 0, 'group meetings are included in server digests instead of individual reminders');
+assert.equal(new Set(plans.map(x => x.id)).size, 0);
 
 const ended = model.meetingStore.stop(first.id, start + 2.5 * 3600000);
 assert.equal(ended.endReason, 'manual');

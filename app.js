@@ -162,6 +162,12 @@
   }
   const isInside = (intervals, minute) => intervals.some(([start, end]) => start <= minute && minute < end);
 
+  function agendaBusyAt(at = Date.now()) {
+    const A = window.ScheduleAgenda;
+    if (!A) return false;
+    return [...meetingStore.list().map(v => A.meetingInterval(v)), ...(window.AgendaClient?.list() || []).map(v => A.busyInterval(v))]
+      .some(v => v && v[0] <= at && at < v[1]);
+  }
   function dayFreeWindows(day, week) {
     const occupied = activeCourses(day, week).map(course => {
       const time = periodTime(course);
@@ -169,11 +175,15 @@
     });
     const dayKey = dateKey(addDays(weekStart(week), day - 1));
     const [dayStart, dayEnd] = window.MeetingStore.dayRange(dayKey);
-    for (const meeting of meetingStore.forDay(dayKey)) {
-      occupied.push([
-        Math.max(0, (meeting.startAt - dayStart) / 60000),
-        Math.min(1440, (meetingEnd(meeting) - dayStart) / 60000)
-      ]);
+    for (const meeting of meetingStore.list()) {
+      const interval = window.ScheduleAgenda?.meetingInterval(meeting) || [meeting.startAt, meetingEnd(meeting)];
+      if (interval && interval[0] < dayEnd && dayStart < interval[1])
+        occupied.push([Math.max(0,(interval[0]-dayStart)/60000), Math.min(1440,(interval[1]-dayStart)/60000)]);
+    }
+    for (const item of window.AgendaClient?.list() || []) {
+      const interval = window.ScheduleAgenda.busyInterval(item);
+      if (interval && interval[0] < dayEnd && dayStart < interval[1])
+        occupied.push([Math.max(0,(interval[0]-dayStart)/60000), Math.min(1440,(interval[1]-dayStart)/60000)]);
     }
     return subtractIntervals(gymSlots(day, week), occupied);
   }
@@ -181,7 +191,7 @@
   function meetingBlock(meeting, dayKey, size) {
     const [dayStart, dayEnd] = window.MeetingStore.dayRange(dayKey);
     const from = Math.max(dayStart, meeting.startAt);
-    const until = Math.min(dayEnd, meetingEnd(meeting));
+    const until = Math.min(dayEnd, window.ScheduleAgenda?.meetingInterval(meeting)?.[1] ?? meetingEnd(meeting));
     if (until <= from) return '';
     const whole = until - from;
     const expected = meeting.startAt + window.MeetingStore.EXPECTED;
@@ -351,6 +361,7 @@
       const meetingDayKey = dateKey(addDays(weekMonday, day - 1));
       for (const meeting of meetingStore.forDay(meetingDayKey))
         pieces.push(meetingBlock(meeting, meetingDayKey, 'week'));
+      pieces.push(window.AgendaClient?.blocks(meetingDayKey,'week') || '');
 
       if (dateKey(addDays(weekMonday, day - 1)) === dateKey(now)) {
         const currentMinutes = now.getHours() * 60 + now.getMinutes();
@@ -441,6 +452,7 @@
     const minute = now.getHours() * 60 + now.getMinutes();
     const slot = gymSlots(mondayIndex(now), weekFromDate(now)).find(([start, end]) => start <= minute && minute < end);
     if (!slot) { gymMessage = '现在不在健身房开放时段。'; return; }
+    if (agendaBusyAt(now.getTime())) { gymMessage = '当前被组会或事项占用，请先完成或结束相应事项。'; return; }
     try {
       const closesAt = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, slot[1]).getTime();
       gymStore.start(now.getTime(), closesAt);
@@ -505,6 +517,11 @@
         actions: '<button type="button" class="action-button meeting-action" data-meeting-end="' + meeting.id + '">结束组会</button>' };
     }
     const notices = [];
+    for (const item of window.AgendaClient?.list() || []) {
+      const interval = window.ScheduleAgenda.busyInterval(item);
+      if (interval && interval[0] <= now.getTime() && now.getTime() < interval[1])
+        notices.push({ kind:'meeting', text: (item.kind==='deadline'?'DDL 待达成 · ':'活动待结束 · ') + item.title });
+    }
     for (const upcoming of meetingStore.forDay(dateKey(date))) {
       const remain = Math.ceil((upcoming.startAt - now.getTime()) / 60000);
       if (upcoming.endAt === null && remain > 0 && remain <= 30)
@@ -530,7 +547,7 @@
     const closing = open.find(([start, end]) => start <= minute && minute < end && end - minute <= 30);
     if (closing) notices.push({ kind: 'soon', text: `健身房 ${closing[1] - minute} 分钟后关闭` });
     let actions = '';
-    if (openNow || gymActive) actions += `<button type="button" class="action-button gym-action" data-action="${gymActive ? 'end-gym' : 'start-gym'}">${gymActive ? '结束健身' : '开始健身'}</button>`;
+    if ((openNow && !agendaBusyAt(now.getTime())) || gymActive) actions += `<button type="button" class="action-button gym-action" data-action="${gymActive ? 'end-gym' : 'start-gym'}">${gymActive ? '结束健身' : '开始健身'}</button>`;
     for (const course of [ongoing, ...soon].filter(Boolean)) {
       actions += `<button type="button" class="action-button skip-action" data-skip="${course._id}">翘掉${shortCourseName(course.name, course.end - course.start + 1)}</button>`;
     }
@@ -540,7 +557,7 @@
       if (start <= minute && minute < end) notices.push({ kind: 'skip', text: `已翘 · ${course.name}正在进行，${time.end}结束` });
       else if (start > minute && start - minute <= 30) notices.push({ kind: 'skip', text: `已翘 · ${course.name}将在 ${start - minute} 分钟后开始` });
     }
-    const title = gymActive ? '正在健身' : ongoing ? `正在上 ${shortCourseName(ongoing.name, ongoing.end - ongoing.start + 1)}` : freeNow ? '现在可以去健身' : '当前没有安排';
+    const title = gymActive ? '正在健身' : ongoing ? `正在上 ${shortCourseName(ongoing.name, ongoing.end - ongoing.start + 1)}` : freeNow ? '现在可以去健身' : openNow && !freeNow ? '当前时间已被占用' : '当前没有安排';
     return { live, minute, title, subtitle: `${minutesToTime(minute)} · ${notices.length ? '当前与即将发生' : '看看今天的时间图'}`, notices, actions };
   }
   function renderDayView() {
@@ -593,6 +610,7 @@
     }
     for (const meeting of meetingStore.forDay(key))
       parts.push(meetingBlock(meeting, key, 'day'));
+    parts.push(window.AgendaClient?.blocks(key,'day') || '');
     if (state.live && state.minute >= DAY_START && state.minute <= DAY_END)
       parts.push(`<div class="day-progress" style="height:${pct(state.minute)}%"></div><div class="day-now-line" style="top:${pct(state.minute)}%"><span>${minutesToTime(state.minute)}</span></div>`);
     parts.push('</div></div>');
@@ -1082,17 +1100,6 @@
         });
       }
     }
-    for (const meeting of meetingStore.list()) {
-      if (meeting.endAt !== null) continue;
-      const planned = [
-        ['p30', meeting.startAt - 30 * 60000, '30 分钟后组会', '组会预计三小时，弹性窗口最多五小时'],
-        ['p5', meeting.startAt - 5 * 60000, '5 分钟后组会', '打开课表查看组会日程'],
-        ['expected', meeting.startAt + window.MeetingStore.EXPECTED, '组会预计时间已到', '如仍在组会，后续两小时属于弹性时段'],
-        ['limit', meeting.startAt + window.MeetingStore.MAXIMUM, '组会五小时上限已到', '如尚未结束，请打开课表确认组会结束']
-      ];
-      for (const [suffix, dueAt, title, body] of planned)
-        if (dueAt > now + 5000) jobs.push({ id: 'meeting-' + meeting.id + '-' + suffix, dueAt, title, body, ttl: 900 });
-    }
     return jobs.sort((a, b) => a.dueAt - b.dueAt || a.id.localeCompare(b.id));
   }
   async function syncPush() {
@@ -1124,7 +1131,7 @@
     pushStatus('正在建立订阅…');
     try {
       const config = await pushRequest('/config');
-      const registration = await navigator.serviceWorker.register('./sw.js?v=28', { updateViaCache: 'none' });
+      const registration = await navigator.serviceWorker.register('./sw.js?v=29', { updateViaCache: 'none' });
       let subscription = await registration.pushManager.getSubscription();
       if (subscription) {
         const oldKey = subscription.options?.applicationServerKey;
@@ -1202,7 +1209,7 @@
     const current = activeGymSession();
     const completed = sessions.filter(session => session.endAt !== null).reverse();
     const minute = now.getHours() * 60 + now.getMinutes();
-    const openNow = isInside(gymSlots(mondayIndex(now), weekFromDate(now)), minute);
+    const openNow = isInside(gymSlots(mondayIndex(now), weekFromDate(now)), minute) && !agendaBusyAt(now.getTime());
     const periodStart = gymPeriod === 'month'
       ? new Date(now.getFullYear(), now.getMonth(), 1)
       : startOfWeek(now);
@@ -1308,6 +1315,8 @@
     setupMeetings();
     setupCalendar();
     setupPush();
+    window.AgendaClient?.init(() => { renderAll(); schedulePushSync(); });
+    document.addEventListener('click', event => { if(event.target.closest('[data-agenda-open]')) window.AgendaClient?.open(); });
     $('cloudButton').addEventListener('click', () => {
       cloudStatus(cloud?.connected() ? '云端已连接；可手动刷新数据' : '请使用通行密钥登录');
       $('cloudDialog').showModal();
@@ -1329,7 +1338,7 @@
     renderAll();
     initCloud();
     clearAttentionBadge();
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js?v=27', { updateViaCache: 'none' }).then(schedulePushSync).catch(() => {});
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js?v=29', { updateViaCache: 'none' }).then(schedulePushSync).catch(() => {});
     setInterval(() => {
       if (refreshDailyState()) { renderAll(); return; }
       renderHeader();

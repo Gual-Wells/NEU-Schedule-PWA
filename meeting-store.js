@@ -50,7 +50,7 @@
     }
     function forDay(dayKey) {
       const [from, to] = dayRange(dayKey);
-      return meetings.filter(item => overlaps(item.startAt, occupiedEnd(item), from, to));
+      return meetings.filter(item => { const interval = window.ScheduleAgenda?.meetingInterval(item) || [item.startAt, occupiedEnd(item)]; return interval && overlaps(interval[0],interval[1],from,to); });
     }
     function plan(startAt, now = Date.now()) {
       if (!Number.isSafeInteger(startAt) || startAt < now - 60000)

@@ -1,16 +1,18 @@
-const CACHE = 'neu-schedule-v28';
+const CACHE = 'neu-schedule-v29';
 const CORE = [
   './',
   './index.html',
-  './styles.css?v=28',
-  './gym-store.js?v=28',
-  './meeting-store.js?v=28',
-  './webauthn-browser.js?v=28',
-  './auth-client.js?v=28',
-  './cloud-sync.js?v=28',
-  './bootstrap.js?v=28',
-  './app.js?v=28',
-  './manifest.webmanifest?v=28',
+  './styles.css?v=29',
+  './agenda-core.js?v=29',
+  './agenda-client.js?v=29',
+  './gym-store.js?v=29',
+  './meeting-store.js?v=29',
+  './webauthn-browser.js?v=29',
+  './auth-client.js?v=29',
+  './cloud-sync.js?v=29',
+  './bootstrap.js?v=29',
+  './app.js?v=29',
+  './manifest.webmanifest?v=29',
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/apple-touch-icon.png'
@@ -29,7 +31,7 @@ self.addEventListener('push', event => {
     const body = typeof notice?.body === 'string' ? notice.body : '';
     const url = typeof notice?.navigate === 'string' && new URL(notice.navigate, self.location.href).origin === self.location.origin
       ? notice.navigate : new URL('./', self.registration.scope).href;
-    await self.registration.showNotification(title, { body, icon: './icons/icon-192.png', badge: './icons/icon-192.png', data: { url } });
+    await self.registration.showNotification(title, { body, icon: './icons/icon-192.png', badge: './icons/icon-192.png', tag: typeof notice?.tag === 'string' ? notice.tag : undefined, data: { url } });
     if ('setAppBadge' in self.navigator) {
       try { await self.navigator.setAppBadge(1); } catch (_) {}
     }
@@ -58,7 +60,10 @@ self.addEventListener('activate', event => {
 self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
   const path = new URL(event.request.url).pathname;
-  if (path.startsWith('/auth/') || ['/schedule', '/calendar', '/state', '/config', '/health'].includes(path)) return;
+  if (new URL(event.request.url).origin !== self.location.origin) return;
+  const staticAsset = CORE.some(asset => new URL(asset,self.registration.scope).pathname === path);
+  if (!staticAsset && event.request.mode !== 'navigate') return;
+  if (/^\/(auth|agenda|imports|runner)(\/|$)/.test(path) || ['/schedule','/calendar','/state','/config','/health'].includes(path)) return;
 
   if (event.request.mode === 'navigate') {
     event.respondWith(
