@@ -1,8 +1,10 @@
-# 事项接口与运行器：版本 1
+# 事项接口与运行器：业务版本 1、附件版本 2
 
 `GET /agenda` 需同域登录会话，返回 `{protocol:1, revision, items, imports, digests}`。所有时刻为 UTC 毫秒，显示与图片日期解析固定 Asia/Shanghai，不依赖运行器所在地。业务响应均 no-store。
 
 `POST /agenda/commit` 还需匹配 Origin。操作均带 id（ASCII 请求 ID）和 protocol:1。create 包含 items；apply 另含 importId 和 revision。每个待创建事项包含 key、kind、title、anchorAt、explicitEndAt、location、evidence；kind 为 activity 或 deadline。标题最长 100 字符，地点 200，原文证据 1200。每次最多 20 项。resolve / cancel 使用 itemId、at；完成允许最长 31 天内离线补传，未来时间最多容忍一分钟。DDL 可以提前达成；活动开始前不能结束。只允许窗口开始前取消，之后使用完成或结束。同 ID 不同内容和版本冲突返回 409，非法字段返回 400，未登录返回 401。
+
+v30 新入口及联合识别约定见 [多图附件协议](AGENDA_MULTI_IMAGE.md)，以下单图入口保留兼容。
 
 `POST /imports?nonce=...&note=...` 请求体是原始图片字节；nonce 是客户端幂等 ID，note 最长 800 字符。事务内限额防止并发绕过。响应返回导入 ID、状态及修订号。`POST /imports/{id}/cancel` 撤销尚未应用的导入并删除图片；不能撤销已经写入的事项。识别原始输出遵循 [JSON Schema](agenda-extraction.schema.json)，日期不确定必须为 null；前端编辑不会修改保留的原始候选。只有人工选择并填全的事项能入表。失败由用户重新上传重试。
 
@@ -14,6 +16,6 @@
 
 配置放仓库外的 D 盘受限目录，字段：baseUrl、runnerKey、dataDir、codexPath、nodePath、model。CF Secret 与本机 runnerKey 必须一致；不复制或覆盖现有 VAPID / ENROLLMENT_KEY。模型子进程仅继承必要运行环境，关闭 shell、应用、浏览器、插件和多代理工具，且检查当前鉴权必须为 ChatGPT；不回退计费 API。模型没有日程写权限。
 
-用 Windows PowerShell 5.1 执行 `scripts/install-agenda-task.ps1 -CredentialFile <D盘配置文件>`。任务名 NEU-Schedule-Agenda-Runner，用户登录且本机在线时每分钟检查一次；空队列不调用模型。隐藏窗口启动器避免弹控制台，互斥锁及任务 IgnoreNew 防止重叠。运行器每次至多处理一张图片，单次推理八分钟超时，缓存完成结果后再上传，72 小时清理本任务目录。电脑休眠或离线时图片排队，云端汇总不依赖本机。使用现有 ChatGPT 配额，新增 D1/Worker 用量，未开通新的付费产品。暂停识别只需停用该任务，不影响课表和推送。
+用 Windows PowerShell 5.1 执行 `scripts/install-agenda-task.ps1 -CredentialFile <D盘配置文件>`。任务名 NEU-Schedule-Agenda-Runner，用户登录且本机在线时每分钟检查一次；空队列不调用模型。隐藏窗口启动器避免弹控制台，互斥锁及任务 IgnoreNew 防止重叠。运行器每次至多处理一批（1–8 张）图片并联合调用一次模型，单次推理八分钟超时，缓存完成结果后再上传，72 小时清理本任务目录。电脑休眠或离线时图片排队，云端汇总不依赖本机。使用现有 ChatGPT 配额，新增 D1/Worker 用量，未开通新的付费产品。暂停识别只需停用该任务，不影响课表和推送。
 
-发布顺序：D1 导出并验证恢复 → 应用 0011（新增事项表并移除未发送的组会逐项提醒）→ 配置独立运行器 Secret → 部署 Worker → 构建及发布 Pages v29 → 验证保护接口及原有凭据数量 → 安装并检查本机任务。回退前端/Worker 保留新增表及已确认事项，不能用旧备份覆盖新写入。通知投递仍要求原设备已订阅且系统允许通知。
+发布顺序：D1 导出并验证恢复 → 应用 0011 / 0012（事项及附件表）→ 配置独立运行器 Secret → 部署 Worker → 构建及发布 Pages v30 → 验证保护接口及原有凭据数量 → 安装并检查本机任务。回退前端/Worker 保留新增表及已确认事项，不能用旧备份覆盖新写入。通知投递仍要求原设备已订阅且系统允许通知。

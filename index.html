@@ -10,10 +10,10 @@
   <meta name="apple-mobile-web-app-title" content="课表" />
   <meta name="format-detection" content="telephone=no" />
   <title>课表</title>
-  <link rel="manifest" href="./manifest.webmanifest?v=29" />
+  <link rel="manifest" href="./manifest.webmanifest?v=30" />
   <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
   <link rel="icon" href="./icons/icon-192.png" />
-  <link rel="stylesheet" href="./styles.css?v=29" />
+  <link rel="stylesheet" href="./styles.css?v=30" />
 </head>
 <body>
   <main class="app-shell" id="app">
@@ -70,7 +70,7 @@
     <div class="sheet agenda-sheet">
       <div class="sheet-head"><div><span class="sheet-kicker">DDL · 活动 · 组会汇总</span><h2>事项与图片导入</h2></div><button type="button" class="close-button" id="closeAgenda" aria-label="关闭">×</button></div>
       <p class="meeting-explainer">活动向后安排三小时，DDL 向前预警三小时。实线一小时、虚线两小时；点击达成或结束前，会持续占用健身时间。组会保留原有 3+2 小时显示。</p>
-      <div class="agenda-upload"><label>选择通知截图<input id="agendaImage" type="file" accept="image/png,image/jpeg,image/webp" /></label><label>补充说明（可选）<input id="agendaNote" maxlength="800" placeholder="例如：这是下周的通知，地点为 A101" /></label><div class="push-actions"><button type="button" id="agendaUpload">识别图片</button><button type="button" id="agendaManual">手动添加</button><button type="button" id="agendaRefresh">刷新</button></div></div>
+      <div class="agenda-upload"><label>选择通知截图（可多选、追加）<input id="agendaImage" type="file" accept="image/png,image/jpeg,image/webp" multiple /></label><p id="agendaSelectionStatus" role="status"></p><div id="agendaImageList" class="agenda-image-list"></div><label>整批补充说明（可选）<input id="agendaNote" maxlength="800" placeholder="例如：这几张截图描述同一项论文任务" /></label><div class="push-actions"><button type="button" id="agendaUpload" disabled>上传并联合识别</button><button type="button" id="agendaDiscard" disabled>取消本批图片</button><button type="button" id="agendaManual">手动添加</button><button type="button" id="agendaRefresh">刷新</button></div></div>
       <p id="agendaStatus" role="status" class="calendar-status"></p>
       <div id="agendaContent"></div>
       <form id="agendaEditor" hidden><p id="agendaSource"></p><div id="agendaCandidates"></div><p id="agendaEditorStatus" role="status"></p><div class="push-actions"><button type="submit">确认所选事项入表</button><button type="button" id="agendaBack">返回</button></div></form>
@@ -177,13 +177,14 @@
     </form>
   </dialog>
 
-  <script src="./agenda-core.js?v=29"></script>
-  <script src="./agenda-client.js?v=29"></script>
-  <script src="./gym-store.js?v=29"></script>
-  <script src="./meeting-store.js?v=29"></script>
-  <script src="./webauthn-browser.js?v=29"></script>
-  <script src="./auth-client.js?v=29"></script>
-  <script src="./cloud-sync.js?v=29"></script>
-  <script src="./bootstrap.js?v=29"></script>
+  <script src="./agenda-core.js?v=30"></script>
+  <script src="./agenda-upload.js?v=30"></script>
+  <script src="./agenda-client.js?v=30"></script>
+  <script src="./gym-store.js?v=30"></script>
+  <script src="./meeting-store.js?v=30"></script>
+  <script src="./webauthn-browser.js?v=30"></script>
+  <script src="./auth-client.js?v=30"></script>
+  <script src="./cloud-sync.js?v=30"></script>
+  <script src="./bootstrap.js?v=30"></script>
 </body>
 </html>

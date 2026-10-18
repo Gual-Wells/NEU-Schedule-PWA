@@ -7,6 +7,11 @@ import worker from '../src/index.js';
 import { dispatchDigests, cleanupAgenda, agendaBlocksGym, digestNotice } from '../src/agenda.js';
 
 const A=globalThis.ScheduleAgenda, now=Date.now(), sha=value=>createHash('sha256').update(value).digest('base64url');
+const imageBytes=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==','base64');
+const batchManifest=(nonce='batch-1',count=2)=>({protocol:2,nonce,note:'这些图片属于同一事项',images:Array.from({length:count},(_,i)=>{
+  const bytes=Buffer.concat([imageBytes,Buffer.from([i])]);
+  return {id:nonce+'-image-'+i,mime:'image/png',byteLength:bytes.length,digest:createHash('sha256').update(bytes).digest('hex')};
+})});
 function setup() {
   const sqlite=new DatabaseSync(':memory:');
   for(const name of readdirSync(new URL('../migrations/',import.meta.url)).filter(v=>v.endsWith('.sql')).sort()) sqlite.exec(readFileSync(new URL('../migrations/'+name,import.meta.url),'utf8'));
@@ -126,4 +131,75 @@ test('digests cover rolling 72 hours and unresolved past; each daily slot delive
   assert(Buffer.byteLength(digestNotice(large))<3000);assert.match(digestNotice(large),/共 100 项/);
   const escaped=large.map(v=>({...v,title:'"\\'.repeat(50)}));
   assert(Buffer.byteLength(JSON.stringify(digestNotice(escaped)))<3000,'encoded quotes and backslashes fit the push budget');
+});
+
+test('a complete multi-image batch is jointly claimed once; sources survive reviewed application',async()=>{
+  const {call,sqlite,env}=setup(),manifest=batchManifest();
+  const created=await (await call('/imports/batches',manifest)).json();
+  assert(created.id,JSON.stringify(created));assert.equal(created.uploadState,'draft');assert.equal(created.images.length,2);
+  assert.equal((await (await call('/imports/batches',manifest)).json()).id,created.id);
+  assert.equal((await call('/imports/batches',{...manifest,note:'different'})).status,409);
+  assert.equal((await call('/imports/'+created.id+'/submit',{})).status,409);
+  assert.equal((await (await call('/runner/claim',{protocol:2},true)).json()).job,null);
+  for(const [i,image] of manifest.images.entries()) {
+    const bytes=Buffer.concat([imageBytes,Buffer.from([i])]);
+    assert.equal((await call('/imports/'+created.id+'/images/'+image.id,bytes)).status,200);
+    assert.equal((await call('/imports/'+created.id+'/images/'+image.id,bytes)).status,200,'same image upload is idempotent');
+    const full=await call('/imports/'+created.id+'/source/'+(i+1));
+    assert.deepEqual(Buffer.from(await full.arrayBuffer()),bytes);
+    assert.equal(full.headers.get('cache-control'),'no-store');
+    assert.equal((await (await call('/runner/claim',{protocol:2},true)).json()).job,null,'complete uploads still wait for explicit submit');
+  }
+  const submitted=await (await call('/imports/'+created.id+'/submit',{})).json();
+  assert.equal(submitted.uploadState,'ready');
+  assert.equal((await (await call('/imports/'+created.id+'/submit',{})).json()).revision,submitted.revision);
+  assert.equal((await (await call('/runner/claim',{},true)).json()).job,null,'legacy workers cannot claim image bundles');
+  const job=(await (await call('/runner/claim',{protocol:2},true)).json()).job;
+  assert.equal(job.protocol,2);assert.deepEqual(job.images.map(v=>v.position),[1,2]);
+  const result={summary:'联合识别',items:[{key:'one',kind:'deadline',title:'跨图论文任务',localTime:'2026-11-01T12:00',localEnd:null,location:'A101',evidence:'图1内容，图2时间',question:'',sourceImages:[1,2]}]};
+  assert.equal((await call('/runner/result/'+job.id,{...result,items:[{...result.items[0],sourceImages:[3]}]},true,job.claim)).status,400);
+  assert.equal((await call('/runner/result/'+job.id,result,true,job.claim)).status,200);
+  const reviewed=await (await call('/imports/'+job.id)).json();
+  const op={id:'apply-multi',type:'apply',importId:job.id,revision:reviewed.revision,items:[{key:'one',kind:'deadline',title:'跨图论文任务',anchorAt:A.localTime('2026-11-01T12:00'),sourceImages:[8]}]};
+  const applied=await (await call('/agenda/commit',op)).json();
+  assert.deepEqual(applied.items[0].sourceImages,[1,2],'sources come from immutable extraction instead of client edits');
+  assert.equal(applied.items[0].sourceImportId,job.id);
+  assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM agenda_items').get().n,1);
+  assert.equal((await worker.fetch(new Request('https://app.test/imports/'+job.id+'/source/2'),env)).status,401);
+});
+
+test('multi-image cancellation, missing data, corrupt uploads, limits and expiry remain safe',async()=>{
+  const {call,sqlite,env}=setup(),manifest=batchManifest('limits');
+  assert.equal((await call('/imports/batches',{...manifest,images:[]})).status,400);
+  assert.equal((await call('/imports/batches',batchManifest('many',9))).status,400);
+  assert.equal((await call('/imports/batches',{...manifest,images:[manifest.images[0],{...manifest.images[0],id:'other'}]})).status,400);
+  assert.equal((await call('/imports/batches',{...manifest,images:batchManifest('total',5).images.map(image=>({...image,byteLength:5*1024*1024}))})).status,400);
+  const created=await (await call('/imports/batches',manifest)).json();
+  const path='/imports/'+created.id+'/images/'+manifest.images[0].id;
+  assert.equal((await call(path,imageBytes)).status,400);
+  assert.equal((await call(path,Buffer.concat([imageBytes,Buffer.from([0])]))).status,200);
+  assert.equal((await call('/imports/'+created.id+'/submit',{})).status,409);
+  assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM agenda_image_chunks').get().n,1);
+  await call('/imports/'+created.id+'/cancel',{});
+  assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM agenda_image_chunks').get().n,0);
+  assert.equal((await call(path,Buffer.concat([imageBytes,Buffer.from([0])]))).status,409);
+  assert.equal((await call('/imports/'+created.id+'/source/1')).status,410);
+  const expired=await (await call('/imports/batches',batchManifest('expiry',1))).json();
+  await call('/imports/'+expired.id+'/images/expiry-image-0',Buffer.concat([imageBytes,Buffer.from([0])]));
+  sqlite.prepare('UPDATE agenda_imports SET expires_at=? WHERE id=?').run(now-1,expired.id);
+  await cleanupAgenda(env,now);
+  assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM agenda_image_chunks').get().n,0);
+  assert.equal((await call('/imports/'+expired.id+'/submit',{})).status,409);
+});
+
+test('cancellation racing with a final image upload cannot restore its bytes',async()=>{
+  const {call,sqlite,env}=setup(),manifest=batchManifest('race',1),created=await (await call('/imports/batches',manifest)).json();
+  const batch=env.DB.batch.bind(env.DB);let cancel=false;
+  env.DB.batch=async commands=>{
+    if(!cancel){cancel=true;sqlite.prepare("UPDATE agenda_imports SET status='cancelled' WHERE id=?").run(created.id);}
+    return batch(commands);
+  };
+  assert.equal((await call('/imports/'+created.id+'/images/race-image-0',Buffer.concat([imageBytes,Buffer.from([0])]))).status,409);
+  assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM agenda_image_chunks').get().n,0);
+  assert.equal(sqlite.prepare('SELECT received_at FROM agenda_import_images').get().received_at,null);
 });

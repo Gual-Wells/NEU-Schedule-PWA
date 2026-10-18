@@ -1131,7 +1131,7 @@
     pushStatus('正在建立订阅…');
     try {
       const config = await pushRequest('/config');
-      const registration = await navigator.serviceWorker.register('./sw.js?v=29', { updateViaCache: 'none' });
+      const registration = await navigator.serviceWorker.register('./sw.js?v=30', { updateViaCache: 'none' });
       let subscription = await registration.pushManager.getSubscription();
       if (subscription) {
         const oldKey = subscription.options?.applicationServerKey;
@@ -1338,7 +1338,7 @@
     renderAll();
     initCloud();
     clearAttentionBadge();
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js?v=29', { updateViaCache: 'none' }).then(schedulePushSync).catch(() => {});
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js?v=30', { updateViaCache: 'none' }).then(schedulePushSync).catch(() => {});
     setInterval(() => {
       if (refreshDailyState()) { renderAll(); return; }
       renderHeader();

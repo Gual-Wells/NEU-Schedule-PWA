@@ -1,34 +1,12 @@
 import '../../agenda-core.js';
 import { sessionFor } from './auth.js';
+import { idOK, json, hash, input, enc } from './agenda-wire.js';
+import { legacyUpload, imageResponse, importViews, importDetail, createBatch, uploadBatchImage, submitBatch } from './agenda-images.js';
 
 const A = globalThis.ScheduleAgenda;
-const enc = new TextEncoder();
-const MAX_IMAGE = 5 * 1024 * 1024, CHUNK = 256 * 1024;
-const idOK = value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,90}$/.test(value);
-const json = (value, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } });
-const hash = async bytes => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), b => b.toString(16).padStart(2, '0')).join('');
 const item = row => ({ id: row.id, kind: row.kind, title: row.title, anchorAt: row.anchor_at, explicitEndAt: row.explicit_end_at,
-  location: row.location, evidence: row.evidence, resolvedAt: row.resolved_at, cancelledAt: row.cancelled_at, revision: row.revision });
-const importView = row => ({ id: row.id, status: row.status, revision: row.revision, note: row.note, referenceAt: row.reference_at,
-  createdAt: row.created_at, expiresAt: row.expires_at, error: row.error, result: row.result_json ? JSON.parse(row.result_json) : null });
-
-async function body(request, maximum = 100000) {
-  const reader = request.body?.getReader();
-  if (!reader) throw Error('请求为空');
-  const parts = []; let size = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    size += value.length;
-    if (size > maximum) { await reader.cancel(); throw Error('请求过大'); }
-    parts.push(value);
-  }
-  const bytes = new Uint8Array(size); let offset = 0;
-  for (const part of parts) { bytes.set(part, offset); offset += part.length; }
-  return bytes;
-}
-const input = async request => JSON.parse(new TextDecoder().decode(await body(request)));
-
+  location: row.location, evidence: row.evidence, resolvedAt: row.resolved_at, cancelledAt: row.cancelled_at, revision: row.revision,
+  sourceImportId:row.source_import_id,sourceImages:JSON.parse(row.source_images||'[]') });
 export async function agendaSnapshot(env) {
   const [rows, imports, digests, meta] = await Promise.all([
     env.DB.prepare('SELECT * FROM agenda_items ORDER BY anchor_at').all(),
@@ -36,13 +14,13 @@ export async function agendaSnapshot(env) {
     env.DB.prepare('SELECT * FROM agenda_digests ORDER BY slot_at DESC LIMIT 14').all(),
     env.DB.prepare('SELECT revision FROM agenda_meta WHERE id=1').first()
   ]);
-  return { protocol: 1, items: rows.results.map(item), imports: imports.results.map(importView),
+  return { protocol: 1, items: rows.results.map(item), imports: await importViews(env,imports.results),
     digests: digests.results.map(d => ({ id: d.id, slotAt: d.slot_at, entries: JSON.parse(d.content_json) })), revision: meta.revision };
 }
 
-function insertion(env, id, value, source, key, now) {
-  return env.DB.prepare('INSERT INTO agenda_items(id,kind,title,anchor_at,explicit_end_at,location,evidence,source_import_id,source_item_key,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)')
-    .bind(id, value.kind, value.title, value.anchorAt, value.explicitEndAt, value.location, value.evidence, source, key, now, now);
+function insertion(env, id, value, source, key, now, sourceImages=[]) {
+  return env.DB.prepare('INSERT INTO agenda_items(id,kind,title,anchor_at,explicit_end_at,location,evidence,source_import_id,source_item_key,created_at,updated_at,source_images) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)')
+    .bind(id, value.kind, value.title, value.anchorAt, value.explicitEndAt, value.location, value.evidence, source, key, now, now,JSON.stringify(sourceImages));
 }
 
 async function commit(env, op) {
@@ -54,20 +32,22 @@ async function commit(env, op) {
   const now = Date.now(), commands = [];
   if (op.type === 'create' || op.type === 'apply') {
     if (!Array.isArray(op.items) || !op.items.length || op.items.length > 20) throw Error('请选择 1 至 20 个事项');
-    let source = null;
+    let source = null,sources=new Map();
     if (op.type === 'apply') {
       if (!idOK(op.importId) || !Number.isInteger(op.revision)) throw Error('导入版本无效');
       const row = await env.DB.prepare('SELECT * FROM agenda_imports WHERE id=?').bind(op.importId).first();
       if (!row || row.status !== 'review' || row.revision !== op.revision) return json({ error: '导入已更新，请刷新后确认' }, 409);
       source = row.id;
-      const keys = new Set(JSON.parse(row.result_json).items.map(v => v.key));
+      const rawItems=JSON.parse(row.result_json).items;
+      const keys = new Set(rawItems.map(v => v.key));
+      sources=new Map(rawItems.map(v=>[v.key,v.sourceImages||[1]]));
       if (op.items.some(v => !keys.has(v.key))) throw Error('候选事项编号无效');
       commands.push(env.DB.prepare('INSERT INTO agenda_apply_guards VALUES(?,?,?)').bind(op.id, source, op.revision));
     }
     if (new Set(op.items.map(v => v.key)).size !== op.items.length) throw Error('事项编号重复');
     for (const [index, candidate] of op.items.entries()) {
       if (!idOK(candidate.key)) throw Error('事项编号无效');
-      commands.push(insertion(env, 'a-' + op.id + '-' + index, A.normalizeItem(candidate, now), source, source ? candidate.key : null, now));
+      commands.push(insertion(env, 'a-' + op.id + '-' + index, A.normalizeItem(candidate, now), source, source ? candidate.key : null, now,sources.get(candidate.key)||[]));
     }
     if (source) commands.push(env.DB.prepare("UPDATE agenda_imports SET status='applied',revision=revision+1,updated_at=? WHERE id=?").bind(now, source));
   } else if (op.type === 'resolve' || op.type === 'cancel') {
@@ -90,65 +70,7 @@ async function commit(env, op) {
   return json({ ok: true, ...await agendaSnapshot(env) });
 }
 
-function imageMime(bytes) {
-  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg';
-  if ([137,80,78,71,13,10,26,10].every((v, i) => bytes[i] === v)) return 'image/png';
-  if (new TextDecoder().decode(bytes.slice(0,4)) === 'RIFF' && new TextDecoder().decode(bytes.slice(8,12)) === 'WEBP') return 'image/webp';
-  throw Error('只支持 PNG、JPEG 或 WebP 图片');
-}
-
-function imageDimensions(bytes, mime) {
-  const view=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength);
-  let width=0,height=0;
-  if(mime==='image/png' && bytes.length>=24) {width=view.getUint32(16);height=view.getUint32(20);}
-  if(mime==='image/jpeg') {
-    for(let p=2;p+9<bytes.length;) {
-      if(bytes[p++]!==255)break;
-      let marker=bytes[p++];while(marker===255)marker=bytes[p++];
-      if(marker===0xd9||marker===0xda)break;
-      const length=view.getUint16(p);if(length<2||p+length>bytes.length)break;
-      if([0xc0,0xc1,0xc2,0xc3,0xc5,0xc6,0xc7,0xc9,0xca,0xcb,0xcd,0xce,0xcf].includes(marker)) {height=view.getUint16(p+3);width=view.getUint16(p+5);break;}
-      p+=length;
-    }
-  }
-  if(mime==='image/webp'&&bytes.length>=30) {
-    const kind=new TextDecoder().decode(bytes.slice(12,16));
-    if(kind==='VP8X') {width=1+bytes[24]+(bytes[25]<<8)+(bytes[26]<<16);height=1+bytes[27]+(bytes[28]<<8)+(bytes[29]<<16);}
-    if(kind==='VP8 ') {width=view.getUint16(26,true)&0x3fff;height=view.getUint16(28,true)&0x3fff;}
-    if(kind==='VP8L') {const bits=view.getUint32(21,true);width=(bits&0x3fff)+1;height=((bits>>>14)&0x3fff)+1;}
-  }
-  if(!width||!height||width*height>16*1024*1024)throw Error('图片无效或超过 1600 万像素');
-}
-
-async function upload(request, env, url) {
-  const nonce = url.searchParams.get('nonce'), note = url.searchParams.get('note') || '';
-  if (!idOK(nonce) || note.length > 800) throw Error('上传编号或补充说明无效');
-  const bytes = await body(request, MAX_IMAGE), mime = imageMime(bytes), digest = await hash(bytes);
-  imageDimensions(bytes,mime);
-  const previous = await env.DB.prepare('SELECT * FROM agenda_imports WHERE client_nonce=?').bind(nonce).first();
-  if (previous) return previous.digest === digest ? json(importView(previous)) : json({ error: '上传编号已被使用' }, 409);
-  const now = Date.now(), id = crypto.randomUUID();
-  const commands = [env.DB.prepare("INSERT INTO agenda_imports(id,client_nonce,status,digest,mime,byte_length,note,reference_at,expires_at,created_at,updated_at) VALUES(?,?,'queued',?,?,?,?,?,?,?,?)")
-    .bind(id, nonce, digest, mime, bytes.length, note, now, now + 3 * A.DAY, now, now)];
-  for (let offset = 0, index = 0; offset < bytes.length; offset += CHUNK, index++) commands.push(env.DB.prepare('INSERT INTO agenda_import_chunks VALUES(?,?,?)').bind(id, index, bytes.slice(offset, offset + CHUNK).buffer));
-  try { await env.DB.batch(commands); }
-  catch (error) {
-    const replay = await env.DB.prepare('SELECT * FROM agenda_imports WHERE client_nonce=?').bind(nonce).first();
-    if (replay?.digest === digest) return json(importView(replay));
-    return json({ error: '图片队列已满，请稍后重试或清理待处理图片' }, 409);
-  }
-  return json(importView(await env.DB.prepare('SELECT * FROM agenda_imports WHERE id=?').bind(id).first()));
-}
-
-async function storedImage(env,row) {
-  const {results}=await env.DB.prepare('SELECT content FROM agenda_import_chunks WHERE import_id=? ORDER BY chunk_index').bind(row.id).all();
-  const bytes=new Uint8Array(row.byte_length);let offset=0;
-  for(const part of results){const b=new Uint8Array(part.content);bytes.set(b,offset);offset+=b.length;}
-  if(offset!==bytes.length||await hash(bytes)!==row.digest)throw Error('图片完整性检查失败');
-  return new Response(bytes,{headers:{'content-type':row.mime,'cache-control':'no-store','x-content-type-options':'nosniff'}});
-}
-
-export function validateExtraction(value) {
+export function validateExtraction(value,imageCount=1,requireSources=false) {
   if (!value || !Array.isArray(value.items) || value.items.length > 20 || typeof value.summary !== 'string' || value.summary.length > 2000) throw Error('识别结果格式无效');
   const seen = new Set();
   const items = value.items.map(v => {
@@ -158,7 +80,9 @@ export function validateExtraction(value) {
     if (v.kind === 'deadline' && v.localEnd !== null) throw Error('DDL 不应含活动结束时间');
     if (v.localTime && v.localEnd && A.localTime(v.localEnd) <= A.localTime(v.localTime)) throw Error('活动时间顺序无效');
     if (typeof v.location !== 'string' || v.location.length > 200 || typeof v.evidence !== 'string' || v.evidence.length > 1200 || typeof v.question !== 'string' || v.question.length > 800) throw Error('识别说明无效');
-    return { key:v.key, kind:v.kind, title:v.title, localTime:v.localTime, localEnd:v.localEnd, location:v.location, evidence:v.evidence, question:v.question };
+    const sourceImages=v.sourceImages??(requireSources?null:[1]);
+    if(!Array.isArray(sourceImages)||!sourceImages.length||sourceImages.length>imageCount||new Set(sourceImages).size!==sourceImages.length||sourceImages.some(n=>!Number.isInteger(n)||n<1||n>imageCount))throw Error('识别结果的来源图片编号无效');
+    return { key:v.key, kind:v.kind, title:v.title, localTime:v.localTime, localEnd:v.localEnd, location:v.location, evidence:v.evidence, question:v.question,sourceImages };
   });
   return { summary: value.summary, items };
 }
@@ -168,30 +92,36 @@ async function runner(request, env, url) {
   if (!env.AGENDA_RUNNER_KEY || !token || await hash(enc.encode(token)) !== await hash(enc.encode(env.AGENDA_RUNNER_KEY))) return json({ error: '未授权' }, 401);
   const now = Date.now();
   if (url.pathname === '/runner/claim' && request.method === 'POST') {
+    const capabilities=await input(request);
+    if(capabilities.protocol!==undefined&&![1,2].includes(capabilities.protocol))return json({error:'运行器协议版本不支持'},409);
     await cleanupAgenda(env, now);
-    const row = await env.DB.prepare("SELECT * FROM agenda_imports WHERE status='queued' AND expires_at>? ORDER BY created_at LIMIT 1").bind(now).first();
+    const row = await env.DB.prepare("SELECT * FROM agenda_imports WHERE status='queued' AND upload_state='ready' AND expires_at>? AND (image_protocol=1 OR ?=1) ORDER BY created_at,id LIMIT 1").bind(now,capabilities.protocol===2?1:0).first();
     if (!row) return json({ job: null });
     const claim = crypto.randomUUID();
-    const written = await env.DB.prepare("UPDATE agenda_imports SET status='running',generation=generation+1,claim_hash=?,lease_until=?,revision=revision+1,updated_at=? WHERE id=? AND status='queued' AND expires_at>?")
+    const written = await env.DB.prepare("UPDATE agenda_imports SET status='running',generation=generation+1,claim_hash=?,lease_until=?,revision=revision+1,updated_at=? WHERE id=? AND status='queued' AND upload_state='ready' AND expires_at>?")
       .bind(await hash(enc.encode(claim)), now + 5 * 60000, now, row.id, now).run();
     if (!written.meta.changes) return json({ job: null });
-    return json({ job: { protocol: 1, id: row.id, claim, generation: row.generation + 1, mime: row.mime, digest: row.digest, note: row.note, referenceAt: row.reference_at } });
+    const detail=await importDetail(env,row.id);
+    return json({ job: { protocol:row.image_protocol,id:row.id,claim,generation:row.generation+1,mime:row.mime,digest:row.digest,note:row.note,referenceAt:row.reference_at,
+      images:detail.images.map(image=>({...image,path:'/runner/image/'+row.id+'/'+image.id})) } });
   }
-  const match = url.pathname.match(/^\/runner\/(image|heartbeat|result|fail)\/([A-Za-z0-9_-]{1,90})$/);
+  const match = url.pathname.match(/^\/runner\/(image|heartbeat|result|fail)\/([A-Za-z0-9_-]{1,90})(?:\/([A-Za-z0-9_-]{1,90}))?$/);
   if (!match) return json({ error: '未找到接口' }, 404);
-  const [, action, id] = match, claim = request.headers.get('x-agenda-claim') || '';
+  const [, action, id,imageId] = match, claim = request.headers.get('x-agenda-claim') || '';
+  if(imageId&&action!=='image')return json({error:'未找到接口'},404);
   const row = await env.DB.prepare("SELECT * FROM agenda_imports WHERE id=? AND status='running' AND claim_hash=? AND lease_until>? AND expires_at>?")
     .bind(id, await hash(enc.encode(claim)), now, now).first();
   if (!row) return json({ error: '任务认领已失效' }, 409);
   if (action === 'image' && request.method === 'GET') {
-    return storedImage(env,row);
+    return imageResponse(env,row,imageId);
   }
   if (request.method !== 'POST') return json({ error: '未找到接口' }, 404);
   let sql, args;
   if (action === 'heartbeat') {
     sql = 'lease_until=?,updated_at=?'; args = [now + 5 * 60000, now];
   } else if (action === 'result') {
-    const result = validateExtraction(await input(request));
+    const detail=await importDetail(env,row.id);
+    const result = validateExtraction(await input(request),detail.images.length,row.image_protocol===2);
     sql = "status='review',result_json=?,claim_hash=NULL,lease_until=NULL,revision=revision+1,updated_at=?"; args = [JSON.stringify(result), now];
   } else if (action === 'fail') {
     sql = "status='failed',error=?,claim_hash=NULL,lease_until=NULL,revision=revision+1,updated_at=?"; args = ['识别未完成，请检查本机识别服务后重新上传。', now];
@@ -209,17 +139,36 @@ export async function agendaRoute(request, env) {
     if (!await sessionFor(request, env) || (request.method !== 'GET' && request.headers.get('origin') !== env.APP_ORIGIN)) return json({ error: '请先登录' }, 401);
     if (url.pathname === '/agenda' && request.method === 'GET') return json(await agendaSnapshot(env));
     if (url.pathname === '/agenda/commit' && request.method === 'POST') return await commit(env, await input(request));
-    if (url.pathname === '/imports' && request.method === 'POST') return await upload(request, env, url);
+    if (url.pathname === '/imports' && request.method === 'POST') return await legacyUpload(request, env, url);
+    if(url.pathname==='/imports/batches'&&request.method==='POST')return await createBatch(request,env);
+    const detail=url.pathname.match(/^\/imports\/([A-Za-z0-9_-]{1,90})$/);
+    if(detail&&request.method==='GET'){const row=await importDetail(env,detail[1]);return row?json(row):json({error:'未找到导入'},404);}
+    const attached=url.pathname.match(/^\/imports\/([A-Za-z0-9_-]{1,90})\/images\/([A-Za-z0-9_-]{1,90})$/);
+    const source=url.pathname.match(/^\/imports\/([A-Za-z0-9_-]{1,90})\/source\/([1-8])$/);
+    if(source&&request.method==='GET') {
+      const row=await env.DB.prepare("SELECT * FROM agenda_imports WHERE id=? AND expires_at>? AND status<>'cancelled'").bind(source[1],Date.now()).first();
+      if(!row)return json({error:'图片已过期或不存在'},410);
+      const detail=await importDetail(env,row.id),image=detail.images.find(image=>image.position===Number(source[2]));
+      return image?await imageResponse(env,row,image.id):json({error:'未找到图片'},404);
+    }
+    if(attached&&request.method==='POST')return await uploadBatchImage(request,env,attached[1],attached[2]);
+    if(attached&&request.method==='GET'){
+      const row=await env.DB.prepare("SELECT * FROM agenda_imports WHERE id=? AND expires_at>? AND status<>'cancelled'").bind(attached[1],Date.now()).first();
+      return row?await imageResponse(env,row,attached[2]):json({error:'图片已过期或不存在，原文证据仍保留'},410);
+    }
+    const submit=url.pathname.match(/^\/imports\/([A-Za-z0-9_-]{1,90})\/submit$/);
+    if(submit&&request.method==='POST')return await submitBatch(env,submit[1]);
     const image=url.pathname.match(/^\/imports\/([A-Za-z0-9_-]{1,90})\/image$/);
     if(image&&request.method==='GET') {
       const row=await env.DB.prepare("SELECT * FROM agenda_imports WHERE id=? AND expires_at>? AND status<>'cancelled'").bind(image[1],Date.now()).first();
-      return row?storedImage(env,row):json({error:'图片已过期或不存在，原文证据仍保留'},410);
+      return row?imageResponse(env,row):json({error:'图片已过期或不存在，原文证据仍保留'},410);
     }
     const cancel = url.pathname.match(/^\/imports\/([A-Za-z0-9_-]{1,90})\/cancel$/);
     if (cancel && request.method === 'POST') {
       await env.DB.batch([
         env.DB.prepare("UPDATE agenda_imports SET status='cancelled',claim_hash=NULL,lease_until=NULL,revision=revision+1,updated_at=? WHERE id=? AND status NOT IN ('applied','cancelled')").bind(Date.now(), cancel[1]),
-        env.DB.prepare('DELETE FROM agenda_import_chunks WHERE import_id=?').bind(cancel[1])
+        env.DB.prepare('DELETE FROM agenda_import_chunks WHERE import_id=?').bind(cancel[1]),
+        env.DB.prepare('DELETE FROM agenda_image_chunks WHERE image_id IN (SELECT id FROM agenda_import_images WHERE import_id=?)').bind(cancel[1])
       ]);
       return json({ ok: true });
     }
@@ -230,7 +179,8 @@ export async function agendaRoute(request, env) {
 export async function cleanupAgenda(env, now = Date.now()) {
   await env.DB.batch([
     env.DB.prepare("UPDATE agenda_imports SET status='failed',error='识别服务中断或图片已过期，请重新上传。',claim_hash=NULL,lease_until=NULL,revision=revision+1,updated_at=? WHERE (status='running' AND lease_until<=?) OR (status='queued' AND expires_at<=?)").bind(now, now, now),
-    env.DB.prepare('DELETE FROM agenda_import_chunks WHERE import_id IN (SELECT id FROM agenda_imports WHERE expires_at<=?)').bind(now)
+    env.DB.prepare('DELETE FROM agenda_import_chunks WHERE import_id IN (SELECT id FROM agenda_imports WHERE expires_at<=?)').bind(now),
+    env.DB.prepare('DELETE FROM agenda_image_chunks WHERE image_id IN (SELECT i.id FROM agenda_import_images i JOIN agenda_imports p ON p.id=i.import_id WHERE p.expires_at<=?)').bind(now)
   ]);
 }
 
