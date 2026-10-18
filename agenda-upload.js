@@ -29,8 +29,8 @@
     $('agendaNote').disabled=busy||Boolean(draft.serverId);
     $('agendaUpload').disabled=busy||!draft.images.length;
     $('agendaDiscard').disabled=busy||!draft.images.length;
-    $('agendaUpload').textContent=draft.serverId?'继续上传并识别':'上传并联合识别';
-    $('agendaSelectionStatus').textContent=draft.images.length?`${draft.images.length} / ${MAX_IMAGES} 张 · ${(draft.images.reduce((sum,image)=>sum+image.blob.size,0)/1024/1024).toFixed(1)} MB${draft.serverId?' · 上传未完成，重试只补传缺图':''}`:'可多次选图追加，提交前可调整顺序。最多 8 张，压缩后合计 20 MB。';
+    $('agendaUpload').textContent=draft.serverId?'继续上传并生成':'生成一份事项';
+    $('agendaSelectionStatus').textContent=draft.images.length?`${draft.images.length} / ${MAX_IMAGES} 张 · ${(draft.images.reduce((sum,image)=>sum+image.blob.size,0)/1024/1024).toFixed(1)} MB${draft.serverId?' · 上传未完成，重试只补传缺图':''}`:'一份申请只生成一项，可多次选图补充上下文。最多 8 张，压缩后合计 20 MB。';
     draft.images.forEach((image,index)=>{
       const card=document.createElement('article');card.className='agenda-image-preview';
       const preview=document.createElement('img');preview.src=URL.createObjectURL(image.blob);urls.push(preview.src);preview.alt='图 '+(index+1);preview.loading='lazy';

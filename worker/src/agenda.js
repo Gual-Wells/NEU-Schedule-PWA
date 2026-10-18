@@ -1,5 +1,6 @@
 import '../../agenda-core.js';
 import { sessionFor } from './auth.js';
+import { feedback } from './agenda-review.js';
 import { idOK, json, hash, input, enc } from './agenda-wire.js';
 import { legacyUpload, imageResponse, importViews, importDetail, createBatch, uploadBatchImage, submitBatch } from './agenda-images.js';
 
@@ -30,32 +31,36 @@ async function commit(env, op) {
   const receipt = await env.DB.prepare('SELECT * FROM agenda_operations WHERE id=?').bind(op.id).first();
   if (receipt) return receipt.request_hash === digest ? json({ ok: true, ...await agendaSnapshot(env) }) : json({ error: '操作编号已被使用' }, 409);
   const now = Date.now(), commands = [];
-  if (op.type === 'create' || op.type === 'apply') {
-    if (!Array.isArray(op.items) || !op.items.length || op.items.length > 20) throw Error('请选择 1 至 20 个事项');
-    let source = null,sources=new Map();
-    if (op.type === 'apply') {
-      if (!idOK(op.importId) || !Number.isInteger(op.revision)) throw Error('导入版本无效');
-      const row = await env.DB.prepare('SELECT * FROM agenda_imports WHERE id=?').bind(op.importId).first();
-      if (!row || row.status !== 'review' || row.revision !== op.revision) return json({ error: '导入已更新，请刷新后确认' }, 409);
-      source = row.id;
-      const rawItems=JSON.parse(row.result_json).items;
-      const keys = new Set(rawItems.map(v => v.key));
-      sources=new Map(rawItems.map(v=>[v.key,v.sourceImages||[1]]));
-      if (op.items.some(v => !keys.has(v.key))) throw Error('候选事项编号无效');
-      commands.push(env.DB.prepare('INSERT INTO agenda_apply_guards VALUES(?,?,?)').bind(op.id, source, op.revision));
-    }
-    if (new Set(op.items.map(v => v.key)).size !== op.items.length) throw Error('事项编号重复');
-    for (const [index, candidate] of op.items.entries()) {
-      if (!idOK(candidate.key)) throw Error('事项编号无效');
-      commands.push(insertion(env, 'a-' + op.id + '-' + index, A.normalizeItem(candidate, now), source, source ? candidate.key : null, now,sources.get(candidate.key)||[]));
-    }
-    if (source) commands.push(env.DB.prepare("UPDATE agenda_imports SET status='applied',revision=revision+1,updated_at=? WHERE id=?").bind(now, source));
+  if (op.type === 'create') {
+    if (!Array.isArray(op.items) || op.items.length!==1) throw Error('每次只添加一份事项');
+    const candidate=op.items[0];
+    if(!idOK(candidate.key))throw Error('事项编号无效');
+    commands.push(insertion(env,'a-'+op.id+'-0',A.normalizeItem(candidate,now),null,null,now));
+  } else if(op.type==='apply') {
+    if('items' in op)throw Error('识别结果只能整体确认；需要修改请提交反馈');
+    if(!idOK(op.importId)||!Number.isInteger(op.revision))throw Error('导入版本无效');
+    const row=await env.DB.prepare('SELECT * FROM agenda_imports WHERE id=?').bind(op.importId).first();
+    if(!row||row.status!=='review'||row.revision!==op.revision)return json({error:'申请已更新，请刷新后确认'},409);
+    const result=validateExtraction(JSON.parse(row.result_json),(await importDetail(env,row.id)).images.length,false,true);
+    const candidate=result.items[0];
+    if(!candidate.localTime||candidate.question.trim())return json({error:'此申请仍有待确认内容，请提交文字反馈重新生成'},409);
+    const value=A.normalizeItem({...candidate,anchorAt:A.localTime(candidate.localTime),explicitEndAt:candidate.localEnd?A.localTime(candidate.localEnd):null},now);
+    const linked=(await env.DB.prepare('SELECT * FROM agenda_items WHERE source_import_id=?').bind(row.id).all()).results;
+    if(linked.length>1)return json({error:'旧申请包含多份事项，请反馈后重新生成'},409);
+    const target=linked[0];
+    if(target&&(target.resolved_at!==null||target.cancelled_at!==null))return json({error:'事项已完成或取消，不能改写安排'},409);
+    commands.push(env.DB.prepare('INSERT INTO agenda_review_guards VALUES(?,?,?,?,?,?)').bind(op.id,row.id,row.revision,'review',target?.id||null,target?.revision||null));
+    if(target)commands.push(env.DB.prepare('UPDATE agenda_items SET kind=?,title=?,anchor_at=?,explicit_end_at=?,location=?,evidence=?,source_item_key=?,source_images=?,revision=revision+1,updated_at=? WHERE id=?')
+      .bind(value.kind,value.title,value.anchorAt,value.explicitEndAt,value.location,value.evidence,candidate.key,JSON.stringify(candidate.sourceImages),now,target.id));
+    else commands.push(insertion(env,'a-'+op.id+'-0',value,row.id,candidate.key,now,candidate.sourceImages));
+    commands.push(env.DB.prepare("UPDATE agenda_imports SET status='applied',revision=revision+1,updated_at=? WHERE id=?").bind(now,row.id));
   } else if (op.type === 'resolve' || op.type === 'cancel') {
     if (!idOK(op.itemId) || !Number.isSafeInteger(op.at) || op.at > now + 60000 || op.at < now - 31 * A.DAY) throw Error('完成时间无效');
     const row = await env.DB.prepare('SELECT * FROM agenda_items WHERE id=?').bind(op.itemId).first();
     if (!row) return json({ error: '未找到事项' }, 404);
     if (op.type === 'resolve' && row.kind === 'activity' && op.at < row.anchor_at) throw Error('活动尚未开始');
     if (op.type === 'cancel' && op.at >= A.windows(item(row)).from) throw Error('事项已经开始，请使用完成或结束');
+    if(row.resolved_at===null&&row.cancelled_at===null)commands.push(env.DB.prepare('INSERT INTO agenda_item_operation_guards VALUES(?,?,?)').bind(op.id,row.id,row.revision));
     const field = op.type === 'resolve' ? 'resolved_at' : 'cancelled_at';
     commands.push(env.DB.prepare(`UPDATE agenda_items SET ${field}=?,revision=revision+1,updated_at=? WHERE id=? AND resolved_at IS NULL AND cancelled_at IS NULL`).bind(op.at, now, row.id));
   } else throw Error('操作无效');
@@ -70,8 +75,8 @@ async function commit(env, op) {
   return json({ ok: true, ...await agendaSnapshot(env) });
 }
 
-export function validateExtraction(value,imageCount=1,requireSources=false) {
-  if (!value || !Array.isArray(value.items) || value.items.length > 20 || typeof value.summary !== 'string' || value.summary.length > 2000) throw Error('识别结果格式无效');
+export function validateExtraction(value,imageCount=1,requireSources=false,single=false) {
+  if (!value || !Array.isArray(value.items) || value.items.length > 20 || (single&&value.items.length!==1) || typeof value.summary !== 'string' || value.summary.length > 2000) throw Error('识别结果格式无效');
   const seen = new Set();
   const items = value.items.map(v => {
     if (!idOK(v.key) || seen.has(v.key) || !['activity','deadline'].includes(v.kind) || typeof v.title !== 'string' || !v.title.trim() || v.title.length > 100) throw Error('识别事项无效');
@@ -93,27 +98,27 @@ async function runner(request, env, url) {
   const now = Date.now();
   if (url.pathname === '/runner/claim' && request.method === 'POST') {
     const capabilities=await input(request);
-    if(capabilities.protocol!==undefined&&![1,2].includes(capabilities.protocol))return json({error:'运行器协议版本不支持'},409);
+    if(capabilities.protocol!==undefined&&![1,2,3].includes(capabilities.protocol))return json({error:'运行器协议版本不支持'},409);
     await cleanupAgenda(env, now);
-    const row = await env.DB.prepare("SELECT * FROM agenda_imports WHERE status='queued' AND upload_state='ready' AND expires_at>? AND (image_protocol=1 OR ?=1) ORDER BY created_at,id LIMIT 1").bind(now,capabilities.protocol===2?1:0).first();
+    const row = await env.DB.prepare("SELECT * FROM agenda_imports WHERE status='queued' AND upload_state='ready' AND processing_deadline>? AND (extraction_protocol<3 OR ?=3) AND (image_protocol=1 OR ?>=2) ORDER BY updated_at,id LIMIT 1").bind(now,capabilities.protocol||1,capabilities.protocol||1).first();
     if (!row) return json({ job: null });
     const claim = crypto.randomUUID();
-    const written = await env.DB.prepare("UPDATE agenda_imports SET status='running',generation=generation+1,claim_hash=?,lease_until=?,revision=revision+1,updated_at=? WHERE id=? AND status='queued' AND upload_state='ready' AND expires_at>?")
-      .bind(await hash(enc.encode(claim)), now + 5 * 60000, now, row.id, now).run();
+    const written = await env.DB.prepare("UPDATE agenda_imports SET status='running',generation=generation+1,claim_hash=?,lease_until=?,revision=revision+1,updated_at=? WHERE id=? AND status='queued' AND upload_state='ready' AND processing_deadline>? AND revision=?")
+      .bind(await hash(enc.encode(claim)), now + 5 * 60000, now, row.id, now,row.revision).run();
     if (!written.meta.changes) return json({ job: null });
     const detail=await importDetail(env,row.id);
-    return json({ job: { protocol:row.image_protocol,id:row.id,claim,generation:row.generation+1,mime:row.mime,digest:row.digest,note:row.note,referenceAt:row.reference_at,
-      images:detail.images.map(image=>({...image,path:'/runner/image/'+row.id+'/'+image.id})) } });
+    return json({ job: { protocol:row.image_protocol,extractionProtocol:row.extraction_protocol,sourceCount:detail.images.length,sourceExpiresAt:row.expires_at,previousResult:detail.result,feedback:detail.feedback,id:row.id,claim,generation:row.generation+1,mime:row.mime,digest:row.digest,note:row.note,referenceAt:row.reference_at,
+      images:(row.expires_at>now?detail.images:[]).map(image=>({...image,path:'/runner/image/'+row.id+'/'+image.id})) } });
   }
   const match = url.pathname.match(/^\/runner\/(image|heartbeat|result|fail)\/([A-Za-z0-9_-]{1,90})(?:\/([A-Za-z0-9_-]{1,90}))?$/);
   if (!match) return json({ error: '未找到接口' }, 404);
   const [, action, id,imageId] = match, claim = request.headers.get('x-agenda-claim') || '';
   if(imageId&&action!=='image')return json({error:'未找到接口'},404);
-  const row = await env.DB.prepare("SELECT * FROM agenda_imports WHERE id=? AND status='running' AND claim_hash=? AND lease_until>? AND expires_at>?")
+  const row = await env.DB.prepare("SELECT * FROM agenda_imports WHERE id=? AND status='running' AND claim_hash=? AND lease_until>? AND processing_deadline>?")
     .bind(id, await hash(enc.encode(claim)), now, now).first();
   if (!row) return json({ error: '任务认领已失效' }, 409);
   if (action === 'image' && request.method === 'GET') {
-    return imageResponse(env,row,imageId);
+    return row.expires_at>now?imageResponse(env,row,imageId):json({error:'原图已过期'},410);
   }
   if (request.method !== 'POST') return json({ error: '未找到接口' }, 404);
   let sql, args;
@@ -121,14 +126,18 @@ async function runner(request, env, url) {
     sql = 'lease_until=?,updated_at=?'; args = [now + 5 * 60000, now];
   } else if (action === 'result') {
     const detail=await importDetail(env,row.id);
-    const result = validateExtraction(await input(request),detail.images.length,row.image_protocol===2);
+    const result = validateExtraction(await input(request),detail.images.length,row.image_protocol===2,row.extraction_protocol===3);
     sql = "status='review',result_json=?,claim_hash=NULL,lease_until=NULL,revision=revision+1,updated_at=?"; args = [JSON.stringify(result), now];
   } else if (action === 'fail') {
-    sql = "status='failed',error=?,claim_hash=NULL,lease_until=NULL,revision=revision+1,updated_at=?"; args = ['识别未完成，请检查本机识别服务后重新上传。', now];
+    sql = "status='failed',error=?,claim_hash=NULL,lease_until=NULL,revision=revision+1,updated_at=?"; args = ['识别未完成，可对本申请提交反馈后重试。', now];
   } else return json({ error: '未找到接口' }, 404);
-  const written = await env.DB.prepare(`UPDATE agenda_imports SET ${sql} WHERE id=? AND status='running' AND claim_hash=? AND lease_until>? AND expires_at>?`)
-    .bind(...args, id, row.claim_hash, now, now).run();
-  return written.meta.changes ? json({ ok: true }) : json({ error: '任务已取消或失效' }, 409);
+  const update=env.DB.prepare(`UPDATE agenda_imports SET ${sql} WHERE id=? AND status='running' AND revision=? AND claim_hash=? AND lease_until>? AND processing_deadline>?`)
+    .bind(...args,id,row.revision,row.claim_hash,now,now);
+  const statements=[update];
+  if(action==='result')statements.push(env.DB.prepare("INSERT INTO agenda_result_versions(import_id,generation,result_json,created_at) SELECT id,generation,result_json,? FROM agenda_imports WHERE id=? AND status='review' AND revision=? AND result_json=?")
+    .bind(now,id,row.revision+1,args[0]));
+  const [written]=await env.DB.batch(statements);
+  return written.meta.changes ? json({ok:true}) : json({error:'任务已取消或失效'},409);
 }
 
 export async function agendaRoute(request, env) {
@@ -163,9 +172,15 @@ export async function agendaRoute(request, env) {
       const row=await env.DB.prepare("SELECT * FROM agenda_imports WHERE id=? AND expires_at>? AND status<>'cancelled'").bind(image[1],Date.now()).first();
       return row?imageResponse(env,row):json({error:'图片已过期或不存在，原文证据仍保留'},410);
     }
+    const revision=url.pathname.match(/^\/imports\/([A-Za-z0-9_-]{1,90})\/feedback$/);
+    if(revision&&request.method==='POST')return await feedback(request,env,revision[1]);
     const cancel = url.pathname.match(/^\/imports\/([A-Za-z0-9_-]{1,90})\/cancel$/);
     if (cancel && request.method === 'POST') {
+      if(await env.DB.prepare('SELECT id FROM agenda_items WHERE source_import_id=? LIMIT 1').bind(cancel[1]).first())return json({error:'此申请已关联事项，请从事项操作完成或取消'},409);
+      const current=await env.DB.prepare('SELECT revision,status FROM agenda_imports WHERE id=?').bind(cancel[1]).first();
+      if(!current)return json({error:'未找到申请'},404);
       await env.DB.batch([
+        env.DB.prepare('INSERT INTO agenda_review_guards VALUES(?,?,?,?,NULL,NULL)').bind(crypto.randomUUID(),cancel[1],current.revision,current.status),
         env.DB.prepare("UPDATE agenda_imports SET status='cancelled',claim_hash=NULL,lease_until=NULL,revision=revision+1,updated_at=? WHERE id=? AND status NOT IN ('applied','cancelled')").bind(Date.now(), cancel[1]),
         env.DB.prepare('DELETE FROM agenda_import_chunks WHERE import_id=?').bind(cancel[1]),
         env.DB.prepare('DELETE FROM agenda_image_chunks WHERE image_id IN (SELECT id FROM agenda_import_images WHERE import_id=?)').bind(cancel[1])
@@ -178,7 +193,7 @@ export async function agendaRoute(request, env) {
 
 export async function cleanupAgenda(env, now = Date.now()) {
   await env.DB.batch([
-    env.DB.prepare("UPDATE agenda_imports SET status='failed',error='识别服务中断或图片已过期，请重新上传。',claim_hash=NULL,lease_until=NULL,revision=revision+1,updated_at=? WHERE (status='running' AND lease_until<=?) OR (status='queued' AND expires_at<=?)").bind(now, now, now),
+    env.DB.prepare("UPDATE agenda_imports SET status='failed',error='识别服务中断或图片已过期，请重新上传。',claim_hash=NULL,lease_until=NULL,revision=revision+1,updated_at=? WHERE (status='running' AND lease_until<=?) OR (status='queued' AND (processing_deadline<=? OR ((upload_state='draft' OR result_json IS NULL) AND expires_at<=?)))").bind(now, now, now,now),
     env.DB.prepare('DELETE FROM agenda_import_chunks WHERE import_id IN (SELECT id FROM agenda_imports WHERE expires_at<=?)').bind(now),
     env.DB.prepare('DELETE FROM agenda_image_chunks WHERE image_id IN (SELECT i.id FROM agenda_import_images i JOIN agenda_imports p ON p.id=i.import_id WHERE p.expires_at<=?)').bind(now)
   ]);
