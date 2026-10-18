@@ -73,7 +73,9 @@ button:disabled { cursor: default; opacity: .5; }
   text-shadow: 0 1px 1px #123f72;
 }
 .header-brand { display: contents; }
-.header-meta { grid-area: meta; margin: 0; color: #dcecff; font-size: 10px; white-space: nowrap; }
+.header-meta-row { grid-area: meta; display:flex; align-items:center; justify-content:space-between; gap:6px; white-space:nowrap; }
+.brand-mark { flex:0 0 auto; color:#c4dcf5; font-size:8px; letter-spacing:.1em; }
+.header-meta { margin: 0; color: #dcecff; font-size: 10px; white-space: nowrap; }
 .app-header h1 { grid-area: title; white-space: nowrap; }
 .header-actions { grid-area: actions; display: flex; gap: 4px; align-items: center; }
 .header-actions .ghost-button { padding: 5px 7px; }
@@ -185,6 +187,8 @@ h2 { margin: 0; font-size: 17px; line-height: 1.2; }
   box-shadow: 0 1px 0 #fff inset;
 }
 .segment.active { height: 34px; border-color: #668eb8; background: linear-gradient(#fff, #edf4fc); color: #14568e; }
+.gym-mode .toolbar-side { display:none; }
+.toolbar-note { color:#6d8298; font-size:8px; }
 .toolbar-side { display: flex; flex-direction: column; align-items: end; justify-content: center; gap: 1px; padding-bottom: 4px; }
 .legend-chip { display: inline-flex; align-items: center; gap: 3px; color: #345570; font-size: 9px; white-space: nowrap; }
 .legend-swatch { width: 11px; height: 9px; border: 1px solid; }
@@ -330,6 +334,8 @@ h2 { margin: 0; font-size: 17px; line-height: 1.2; }
 }
 .course-block.skipped { border: 1px dashed #526f89; background: #e2eaf2; color: #35516c; text-shadow: none; box-shadow: none; }
 .course-block.skipped::before { display: none; }
+.course-block.skipped { padding-bottom:12px; }
+.course-block .course-skip-label { position:absolute; bottom:1px; left:0; right:0; font-size:7px; line-height:9px; color:#765b31; font-weight:800; text-align:center; white-space:nowrap; }
 .course-block::before {
   content: "";
   position: absolute;
@@ -593,13 +599,22 @@ h2 { margin: 0; font-size: 17px; line-height: 1.2; }
 .agenda-linked { border-left:3px solid #518671; padding-left:8px; color:#2e6654; }
 
 .map-course-time, .map-course-location { max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.map-course .map-course-time { display:flex; flex-wrap:wrap; gap:0 5px; flex-shrink:0; white-space:normal; overflow:visible; }
+.map-course-time > span { white-space:nowrap; }
+.map-course[data-compact="true"] .map-course-period { display:none; }
 .map-course[data-compact="true"] strong { -webkit-line-clamp:1; }
-.map-course[data-compact="true"] .map-course-location { display:none; }
-.day-all-day { position:sticky; z-index:21; top:0; display:flex; gap:5px; overflow-x:auto; padding:5px 7px; border-bottom:1px solid var(--line); background:var(--surface); }
+.map-course-note { max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.map-course[data-compact="true"] { gap:1px; padding-top:3px; padding-bottom:3px; }
+.day-map-heading { position:sticky; z-index:21; top:0; background:var(--surface); }
+.day-map-heading .map-heading { position:static; }
+.day-all-day { display:flex; gap:5px; overflow-x:auto; padding:5px 7px; border-bottom:1px solid var(--line); background:var(--surface); }
 .all-day-chip { display:flex; align-items:center; gap:5px; flex:0 0 auto; max-width:100%; padding:4px 7px; border:1px solid #a5bacd; border-radius:3px; background:#fff; font-size:10px; }
 .all-day-chip span { flex:0 0 auto; color:var(--muted); font-size:9px; }
 .all-day-chip strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .agenda-source-details { margin-top:8px; }
+.agenda-inference { border-left:3px solid #bc925c; padding-left:8px; color:#70502d; }
+.agenda-pending { color:#855b25; }
+.agenda-source-links { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; font-size:12px; }
 .agenda-source-details summary { color:var(--muted); font-size:11px; }
 .agenda-source-details a { margin-right:8px; }
 .push-status:empty, .calendar-status:empty, .gym-message:empty, #agendaSelectionStatus:empty, #agendaSource:empty, #agendaEditorStatus:empty, #agendaReviewStatus:empty, .login-body p:empty, .calendar-bar > span:empty { display:none; }

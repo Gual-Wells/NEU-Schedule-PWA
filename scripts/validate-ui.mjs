@@ -69,7 +69,9 @@ for (const file of ['data.js', 'gym-store.js', 'meeting-store.js', 'app.js'])
 assert.equal(store.get('neu-schedule-restored-v1'), '[]', 'old-day restores clear on startup');
 
 assert.match(node('timelineGrid').innerHTML, /course-title/);
-assert.doesNotMatch(node('timelineGrid').innerHTML, /course-period|course-time|course-skip-label/);
+assert.match(node('timelineGrid').innerHTML, /course-skip-label">已翘/);
+assert.equal(node('toolbarNote').textContent, '本周');
+assert.doesNotMatch(node('timelineGrid').innerHTML, /course-period|course-time/);
 assert.match(node('timelineGrid').innerHTML, /gym-odd/);
 assert.match(node('timelineGrid').innerHTML, /gym-even/);
 assert.match(node('timelineGrid').innerHTML, /period-slot/);
@@ -94,8 +96,9 @@ node('prevWeek').listeners.click();
 segments[1].listeners.click();
 assert.match(node('dayDashboard').innerHTML, /现在可以去健身/);
 assert.match(node('dayMap').innerHTML, /应用数理统计/);
-assert.match(node('dayMap').innerHTML, /class="map-course-time">16:00–17:40/);
-assert.match(node('dayMap').innerHTML, /class="map-course-location">生命B101/);
+assert.match(node('dayMap').innerHTML, /class="map-course-time"><span>16:00–17:40<\/span><span class="map-course-period">第7–8节/);
+assert.match(node('dayMap').innerHTML, /class="map-course-location">生命B101 · 04班（浑南）/);
+assert.match(node('dayMap').innerHTML, /当日时间图/);
 verifyFullDayAxis(node('dayMap').innerHTML, 'map-period');
 assert.match(node('dayMap').innerHTML, /day-progress/);
 

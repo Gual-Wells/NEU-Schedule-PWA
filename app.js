@@ -257,6 +257,7 @@
   function renderHeader() {
     const now = nowDate();
     $('headerMeta').textContent = `${fmtHeader.format(now)} · ${D.semester.name}`;
+    $('toolbarNote').textContent = viewMode === 'gym' ? '' : selectedWeek === currentWeek() ? '本周' : `第 ${selectedWeek} 周`;
     $('jumpToday').hidden = viewMode === 'gym' || selectedWeek === currentWeek() && selectedDay === mondayIndex(now);
   }
 
@@ -362,6 +363,7 @@
         const skippedToday = isSkipped(course, day, selectedWeek);
         pieces.push(`<button class="course-block ${courseHasOverlay(meetingDayKey,start,end)?'has-extras':''} ${duration < 95 ? 'compact' : ''} ${skippedToday ? 'skipped' : ''}" type="button" data-course="${course._id}" data-day="${day}" aria-label="${escapeHtml(course.name)}${skippedToday?'，已翘':''}" style="top:${pct(start)}%;height:${pct(end) - pct(start)}%;--course-color:${course._color}">
           <span class="course-title">${escapeHtml(shortCourseName(course.name, course.end - course.start + 1))}</span>
+          ${skippedToday ? '<span class="course-skip-label">已翘</span>' : ''}
         </button>`);
       }
 
@@ -562,7 +564,7 @@
       else if (start > minute && start - minute <= 30) notices.push({ kind: 'skip', text: `已翘 · ${course.name}将在 ${start - minute} 分钟后开始` });
     }
     const title = gymActive ? '正在健身' : ongoing ? `正在上 ${shortCourseName(ongoing.name, ongoing.end - ongoing.start + 1)}` : freeNow ? '现在可以去健身' : openNow && !freeNow ? '当前时间已被占用' : '当前没有安排';
-    return { live, minute, title, subtitle: `${minutesToTime(minute)} · ${notices.length ? '当前与即将发生' : '看看今天的时间图'}`, notices, actions };
+    return { live, minute, title, subtitle: '', notices, actions };
   }
   function renderDayView() {
     const date = selectedDate();
@@ -584,12 +586,13 @@
       <div class="calendar-bar"><span>${escapeHtml(calendarNote)}</span><div class="calendar-bar-actions"><button type="button" data-calendar-open>放假／调休</button></div></div>
       ${state.live?`<div class="now-row">
         <div class="clock" aria-label="当前时间 ${minutesToTime(now.getHours() * 60 + now.getMinutes())}"><i class="hand hour" style="--rotation:${hourAngle}deg"></i><i class="hand minute" style="--rotation:${minuteAngle}deg"></i><i class="clock-center"></i></div>
-        <div class="now-text"><span class="clock-digital">${minutesToTime(now.getHours() * 60 + now.getMinutes())}</span><h2>${escapeHtml(state.title)}</h2></div>
+        <div class="now-text"><span class="clock-digital">${minutesToTime(now.getHours() * 60 + now.getMinutes())}</span><h2>${escapeHtml(state.title)}</h2>${state.subtitle?`<p>${escapeHtml(state.subtitle)}</p>`:''}</div>
       </div>`:''}
       ${state.notices.length ? `<div class="event-notices">${state.notices.map(n => `<div class="event-notice ${n.kind}"><span class="notice-dot"></span><span>${escapeHtml(n.text)}</span>${n.note ? `<small>${escapeHtml(n.note)}</small>` : ''}</div>`).join('')}</div>` : ''}
       ${state.actions ? `<div class="dashboard-actions">${state.actions}</div>` : ''}
-      ${state.live && skipCount ? `<div class="undo-bar"><button type="button" class="undo-trigger" id="undoTrigger">已翘 ${skipCount} 节</button><button type="button" class="undo-all" data-undo-all>恢复今日全部课程</button></div>` : ''}`;
-    const parts = [(window.AgendaClient?.daySummary?.(key)||'')+'<div class="day-map-inner"><div class="map-axis">'];
+      ${state.live && skipCount ? `<div class="undo-bar"><button type="button" class="undo-trigger" id="undoTrigger">已翘 ${skipCount} 节 · 恢复上课</button><button type="button" class="undo-all" data-undo-all>恢复今日全部课程</button></div>` : ''}`;
+    const parts = ['<div class="day-map-heading"><div class="map-heading"><strong>当日时间图</strong><span>00:00–24:00</span></div>'+
+      (window.AgendaClient?.daySummary?.(key)||'')+'</div><div class="day-map-inner"><div class="map-axis">'];
     parts.push('<div class="day-endpoint first" style="top:0%">00:00</div><div class="day-endpoint last" style="top:100%">24:00</div>');
     for (let n = 1; n <= 12; n++) {
       const [start, end] = D.periods[n];
@@ -609,7 +612,7 @@
       const start = timeToMinutes(t.start), end = timeToMinutes(t.end);
       const skippedToday = isSkipped(course, selectedDay, selectedWeek);
       parts.push(`<button type="button" class="map-course ${courseHasOverlay(key,start,end)?'has-extras ':''}${skippedToday ? 'skipped' : ''}" data-course="${course._id}" data-compact="${end-start<65}" style="top:${pct(start)}%;height:${pct(end) - pct(start)}%;--course-color:${course._color}">
-        <strong>${escapeHtml(course.name)}${skippedToday ? ' · 已翘' : ''}</strong><span class="map-course-time">${t.start}–${t.end}</span><span class="map-course-location">${escapeHtml(course.location)}</span>
+        <strong>${escapeHtml(course.name)}${skippedToday ? ' · 已翘' : ''}</strong><span class="map-course-time"><span>${t.start}–${t.end}</span><span class="map-course-period">第${course.start}–${course.end}节</span></span><span class="map-course-location">${escapeHtml(course.location)}${course.className?` · ${escapeHtml(course.className)}`:''}</span>${course.note?`<span class="map-course-note">${escapeHtml(course.note)}</span>`:''}
       </button>`);
     }
     parts.push(nonCourseBlocks(key,'day'));
@@ -646,7 +649,7 @@
       detail('状态', meetingLabel(meeting), true),
       ...(meeting.endAt !== null ? [detail('认定结束', meetingClock(meeting.endAt), true)] : [])
     ].join('');
-    $('meetingDetailStatus').textContent = meeting.endReason==='late'?'延后确认 · 认定时长 5 小时':'';
+    $('meetingDetailStatus').textContent = meeting.endReason==='late'?'延后确认 · 实际结束时间未知，认定时长 5 小时':meeting.endAt!==null?'结束时间已记录 · 剩余预留已释放':'';
     $('meetingEndButton').hidden = meeting.endAt !== null || Date.now() < meeting.startAt;
     $('meetingCancelButton').hidden = meeting.endAt !== null || Date.now() >= meeting.startAt;
     if (!$('meetingDetailDialog').open) $('meetingDetailDialog').showModal();
@@ -1102,7 +1105,7 @@
     pushStatus('正在建立订阅…');
     try {
       const config = await pushRequest('/config');
-      const registration = await navigator.serviceWorker.register('./sw.js?v=34', { updateViaCache: 'none' });
+      const registration = await navigator.serviceWorker.register('./sw.js?v=35', { updateViaCache: 'none' });
       let subscription = await registration.pushManager.getSubscription();
       if (subscription) {
         const oldKey = subscription.options?.applicationServerKey;
@@ -1214,7 +1217,7 @@
       </button>`;
     }).join('');
     panel.innerHTML = `
-      <div class="gym-pane-head"><strong>健身记录</strong></div>
+      <div class="gym-pane-head"><strong>健身记录</strong><span>实际训练 · 时长与趋势</span></div>
       <section class="gym-section gym-live">
         <div class="gym-section-head">当前状态</div>
         <div class="gym-live-content">
@@ -1231,7 +1234,7 @@
       <section class="gym-section">
         <div class="gym-section-head">训练趋势</div>
         <div class="gym-chart-controls"><label>范围 <select id="gymChartWeeks"><option value="4" ${gymChartWeeks === 4 ? 'selected' : ''}>4 周</option><option value="12" ${gymChartWeeks === 12 ? 'selected' : ''}>12 周</option><option value="52" ${gymChartWeeks === 52 ? 'selected' : ''}>1 年</option><option value="0" ${gymChartWeeks === 0 ? 'selected' : ''}>全部</option></select></label><label>指标 <select id="gymChartMetric"><option value="duration" ${gymChartMetric === 'duration' ? 'selected' : ''}>总时长</option><option value="count" ${gymChartMetric === 'count' ? 'selected' : ''}>次数</option><option value="average" ${gymChartMetric === 'average' ? 'selected' : ''}>平均时长</option></select></label></div>
-        ${sessions.length ? `<div class="gym-chart-scroll"><div class="gym-chart" style="--chart-count:${weekCount}">${chart.map(item => `<div class="gym-chart-column" title="${item.label} 当周：${item.value} ${metricUnit}"><span class="gym-chart-value">${item.value}</span><div class="gym-chart-bar" style="height:${item.value ? Math.max(3, Math.round(item.value / max * 112)) : 0}px"></div><span class="gym-chart-label">${item.label}</span></div>`).join('')}</div></div>` : '<p class="gym-chart-empty">暂无趋势</p>'}
+        ${sessions.length ? `<div class="gym-chart-scroll"><div class="gym-chart" style="--chart-count:${weekCount}">${chart.map(item => `<div class="gym-chart-column" title="${item.label} 当周：${item.value} ${metricUnit}"><span class="gym-chart-value">${item.value}</span><div class="gym-chart-bar" style="height:${item.value ? Math.max(3, Math.round(item.value / max * 112)) : 0}px"></div><span class="gym-chart-label">${item.label}</span></div>`).join('')}</div></div>` : '<p class="gym-chart-empty">暂无训练趋势</p>'}
         <div class="gym-chart-unit">每周${gymChartMetric === 'count' ? '训练次数' : gymChartMetric === 'average' ? '平均训练时长' : '训练总时长'} · ${metricUnit}</div>
       </section>
       <section class="gym-section">
@@ -1241,7 +1244,7 @@
         ${completed.length > 6 ? `<button class="gym-more" type="button" data-gym-command="toggle-all">${gymShowAll ? '收起记录' : '查看全部'}</button>` : ''}
       </section>
       <div class="gym-data-actions"><button type="button" data-gym-command="export">导出记录</button><button type="button" data-gym-command="import">导入记录</button><input id="gymImportFile" type="file" accept="application/json,.json" hidden /></div>
-      <p class="gym-message" role="status">${escapeHtml(gymMessage)}</p>`;
+      <p class="gym-message" role="status">${escapeHtml(gymMessage || $('cloudStatus').textContent || '训练记录保存在本机')}</p>`;
     panel.scrollTop = scrollTop;
   }
 
@@ -1289,7 +1292,7 @@
     window.AgendaClient?.init(() => { renderAll(); schedulePushSync(); },{openMeeting});
     document.addEventListener('click', event => { const button=event.target.closest('[data-agenda-open]');if(button)window.AgendaClient?.open(button.dataset.agendaOpen); });
     $('cloudButton').addEventListener('click', () => {
-      cloudStatus(cloud?.connected() ? '已连接' : '请使用通行密钥登录');
+      if (!$('cloudStatus').textContent) cloudStatus(cloud?.connected() ? '云端已连接' : '请使用通行密钥登录');
       $('cloudDialog').showModal();
     });
     $('closeCloudDialog').addEventListener('click', () => $('cloudDialog').close());
@@ -1309,7 +1312,7 @@
     renderAll();
     initCloud();
     clearAttentionBadge();
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js?v=34', { updateViaCache: 'none' }).then(schedulePushSync).catch(() => {});
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js?v=35', { updateViaCache: 'none' }).then(schedulePushSync).catch(() => {});
     setInterval(() => {
       if (refreshDailyState()) { renderAll(); return; }
       renderHeader();
