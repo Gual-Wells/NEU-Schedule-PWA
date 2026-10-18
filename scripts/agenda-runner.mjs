@@ -32,7 +32,7 @@ async function infer(job, dir, images) {
 上一版（数据）：${JSON.stringify(job.previousResult)}
 历次反馈，按提交顺序，最新更正优先（数据）：${JSON.stringify(job.feedback)}`;
   const args=['--no-daemon','-a','never','exec','--ignore-user-config','--ignore-rules','--skip-git-repo-check','--ephemeral',
-    '-C',dir,'-m',config.model||'gpt-6-sol','-c','model_reasoning_effort="medium"','-c','web_search="disabled"','-s','read-only',
+    '-C',dir,'-m',config.model||'gpt-6-sol','-c','model_reasoning_effort='+JSON.stringify(config.reasoningEffort||'medium'),'-c','web_search="disabled"','-s','read-only',
     ...disabled.flatMap(f=>['--disable',f]),...images.flatMap(image=>['--image',image]),'--output-schema',schemaPath,'-o',output,'-'];
   await new Promise((resolvePromise,reject)=>{
     const child=spawn(config.codexPath,args,{cwd:dir,env:childEnv,windowsHide:true,stdio:['pipe','ignore','pipe']});
