@@ -6,7 +6,7 @@
 
 POST /imports/{id}/feedback 的 id 为幂等操作号，revision 为当前申请版本，text 最长 2000 字。提交后仍是同一申请，状态回 queued，提取协议升为 3，旧 claim 和审核版本立即失效。用户可在生成中追加反馈，使之前运行结果失效。每次反馈最多触发一次模型调用；重复同一请求只返回当前状态，网络重传沿用本机已生成结果。最多保留 20 次反馈，每次达到上限返回明确错误。
 
-运行器 claim 必须带 protocol:3 才能领取提取协议 3。附件协议仍为 1/2。任务返回 sourceCount、previousResult、按提交顺序的 feedback、generation。多图联合调用一次，默认使用现有 ChatGPT 登录的 gpt-6-sol、medium 推理；不切换付费 API。目录以申请 ID + generation 隔离，避免将上一版结果当成反馈产物复用。结果每代入 agenda_result_versions，反馈和上一版进入 agenda_feedback。
+运行器 claim 必须带 protocol:3 才能领取提取协议 3。附件协议仍为 1/2。任务返回 sourceCount、previousResult、按提交顺序的 feedback、generation。多图联合调用一次，使用现有 ChatGPT 登录，model 与 reasoningEffort 可由仓库外运行器配置指定；缺省为 gpt-6-sol、medium 推理，发布时保留本机已配置的模型及推理档位；不切换付费 API。目录以申请 ID + generation 隔离，避免将上一版结果当成反馈产物复用。结果每代入 agenda_result_versions，反馈和上一版进入 agenda_feedback。
 
 尚未入表时确认创建唯一一项。已入表且仍未结束的单项申请可反馈，确认后原位更新相同事项 ID，直到确认前原安排与健身占用继续生效；完成或取消状态不可重新打开。版本、事项状态和操作收据在同一事务中检查。旧多项已入表记录保留，不静默删除或整体重写；旧多候选未入表申请须反馈后重新生成单项。
 
