@@ -575,3 +575,19 @@ h2 { margin: 0; font-size: 17px; line-height: 1.2; }
 
 .agenda-feedback { display:grid; gap:10px; margin-top:22px; }
 .agenda-feedback textarea { width:100%; box-sizing:border-box; font:inherit; padding:10px; border:1px solid var(--line,#ddd); border-radius:10px; }
+
+/* Non-course arrangements share the right half, leaving courses independently clickable. */
+.course-block.has-extras { right:calc(50% + 1px); }
+.map-course.has-extras { right:calc(50% + 4px); }
+.meeting-week, .meeting-day { left:50%; right:1px; }
+.noncourse-region { position:absolute; left:50%; right:1px; z-index:6; overflow:hidden; min-height:3px; }
+.noncourse-region.day { right:7px; }
+.noncourse-region .noncourse-strip { position:absolute; display:block; right:auto; border-right:1px solid #fff; box-sizing:border-box; box-shadow:none; }
+.noncourse-region .meeting-copy { left:3px; right:1px; top:3px; }
+.noncourse-region .meeting-copy strong { font-size:9px; overflow:hidden; max-height:5.5em; }
+.noncourse-region.day .meeting-copy strong { font-size:12px; }
+.noncourse-region .meeting-copy small { font-size:8px; overflow:hidden; }
+.noncourse-hitbox { position:absolute; inset:0; width:100%; height:100%; border:0; background:transparent; cursor:pointer; z-index:8; padding:0; text-align:right; }
+.noncourse-hitbox > span { position:absolute; bottom:0; right:0; background:#e8f1facf; color:#24496c; font-size:8px; line-height:1.4; max-width:100%; overflow:hidden; white-space:nowrap; }
+.noncourse-hitbox:focus-visible { outline:2px solid #1765a9; outline-offset:-2px; }
+.agenda-linked { border-left:3px solid #518671; padding-left:8px; color:#2e6654; }

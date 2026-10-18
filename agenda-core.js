@@ -13,7 +13,16 @@
     if (!Number.isSafeInteger(at) || new Date(at + 8 * HOUR).toISOString().slice(0, 16) !== value) throw Error('日期或时间无效。');
     return at;
   }
+  function dateTime(value) {
+    if(typeof value!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(value))throw Error('日期无效。');
+    return localTime(value+'T00:00');
+  }
+  function generatedItem(value,now=Date.now()) {
+    return normalizeItem({...value,anchorAt:value.dateStart?undefined:localTime(value.localTime),
+      explicitEndAt:value.dateStart?null:value.localEnd?localTime(value.localEnd):null},now);
+  }
   function windows(item) {
+    if(item.dateStart){const from=dateTime(item.dateStart),to=dateTime(item.dateEnd||item.dateStart)+DAY;return {from,coreFrom:from,coreTo:to,to};}
     const anchor = item.anchorAt;
     if (item.kind === 'deadline') return { from: anchor - 3 * HOUR, coreFrom: anchor - HOUR, coreTo: anchor, to: anchor };
     const to = item.explicitEndAt ?? anchor + 3 * HOUR;
@@ -39,20 +48,25 @@
   }
   function normalizeItem(value, now = Date.now()) {
     if (!value || !['activity', 'deadline'].includes(value.kind) || typeof value.title !== 'string' || !value.title.trim() || value.title.length > 100) throw Error('事项类型或标题无效。');
-    if (!Number.isSafeInteger(value.anchorAt) || value.anchorAt < now - 366 * DAY || value.anchorAt > now + 2 * 366 * DAY) throw Error('事项时间不在支持范围内。');
+    const dateStart=value.dateStart||null,dateEnd=dateStart?(value.dateEnd||dateStart):null;
+    let anchorAt=value.anchorAt;
+    if(dateStart){const start=dateTime(dateStart),end=dateTime(dateEnd)+DAY;if(end<=start||end-start>366*DAY)throw Error('日期范围无效。');anchorAt=value.kind==='deadline'?end:start;}
+    else if(value.dateEnd)throw Error('日期范围缺少开始日期。');
+    if (!Number.isSafeInteger(anchorAt) || anchorAt < now - 366 * DAY || anchorAt > now + 2 * 366 * DAY) throw Error('事项时间不在支持范围内。');
     const explicitEndAt = value.explicitEndAt ?? null;
-    if (explicitEndAt !== null && (value.kind !== 'activity' || !Number.isSafeInteger(explicitEndAt) || explicitEndAt <= value.anchorAt || explicitEndAt - value.anchorAt > 14 * DAY)) throw Error('活动结束时间无效。');
+    if (explicitEndAt !== null && (dateStart || value.kind !== 'activity' || !Number.isSafeInteger(explicitEndAt) || explicitEndAt <= anchorAt || explicitEndAt - anchorAt > 14 * DAY)) throw Error('活动结束时间无效。');
     const location = value.location == null ? '' : String(value.location);
     const evidence = value.evidence == null ? '' : String(value.evidence);
     if (location.length > 200 || evidence.length > 1200) throw Error('地点或来源说明过长。');
-    return { kind: value.kind, title: value.title.trim(), anchorAt: value.anchorAt, explicitEndAt, location, evidence };
+    const inference=value.inference||'';if(typeof inference!=='string'||inference.length>1200)throw Error('推断说明过长。');
+    return { kind: value.kind, title: value.title.trim(), anchorAt, explicitEndAt, location, evidence,dateStart,dateEnd,inference };
   }
   function digest(items, meetings, at = Date.now()) {
     const entries = [];
     for (const item of items) {
       if (item.resolvedAt != null || item.cancelledAt != null) continue;
-      if (item.anchorAt >= at + 3 * DAY) continue;
-      entries.push({ id: item.id, kind: item.kind, title: item.title, at: item.anchorAt, state: status(item, at), location: item.location || '' });
+      if ((item.dateStart?dateTime(item.dateStart):item.anchorAt) >= at + 3 * DAY) continue;
+      entries.push({ id: item.id, kind: item.kind, title: item.title, at: item.anchorAt,dateStart:item.dateStart||null,dateEnd:item.dateEnd||null, state: status(item, at), location: item.location || '' });
     }
     for (const m of meetings) {
       if (m.endAt != null || m.startAt >= at + 3 * DAY) continue;
@@ -61,11 +75,21 @@
     return entries.sort((a, b) => a.at - b.at || a.id.localeCompare(b.id));
   }
   const format = at => new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(at);
+  const timeLabel=item=>item.dateStart?item.dateStart+(item.dateEnd&&item.dateEnd!==item.dateStart?'—'+item.dateEnd:'')+' 全天':format(item.anchorAt)+(item.explicitEndAt?'—'+format(item.explicitEndAt):'');
   function digestText(entries) {
     if (!entries.length) return '未来三日暂无 DDL、活动或组会。';
-    return entries.map(item => `${format(item.at)} ${item.kind === 'deadline' ? 'DDL' : item.kind === 'meeting' ? '组会' : '活动'} ${item.title}${['overdue', 'unconfirmed'].includes(item.state) ? '（待确认）' : ''}`).join('\n');
+    return entries.map(item => `${item.dateStart?timeLabel(item):format(item.at)} ${item.kind === 'deadline' ? 'DDL' : item.kind === 'meeting' ? '组会' : '活动'} ${item.title}${['overdue', 'unconfirmed'].includes(item.state) ? '（待确认）' : ''}`).join('\n');
   }
-  const api = { HOUR, DAY, dayKey, dayRange, localTime, windows, busyInterval, meetingInterval, status, normalizeItem, digest, digestText, format };
+  // Connected overlap groups share a half-column; each time slice divides it equally.
+  function layout(intervals) {
+    const sorted=intervals.filter(v=>v.to>v.from).slice().sort((a,b)=>a.from-b.from||a.to-b.to||a.key.localeCompare(b.key)),groups=[];
+    for(const v of sorted){let g=groups.at(-1);if(!g||v.from>=g.to){g={from:v.from,to:v.to,entries:[]};groups.push(g);}g.to=Math.max(g.to,v.to);g.entries.push(v);}
+    return groups.map(g=>{const edges=[...new Set(g.entries.flatMap(v=>[v.from,v.to]))].sort((a,b)=>a-b),slices=[];
+      for(let i=0;i<edges.length-1;i++){const from=edges[i],to=edges[i+1],active=g.entries.filter(v=>v.from<to&&from<v.to).sort((a,b)=>a.key.localeCompare(b.key));
+        active.forEach((v,lane)=>slices.push({...v,from,to,left:lane/active.length,width:1/active.length}));}
+      return {...g,slices};});
+  }
+  const api = { HOUR, DAY, dayKey, dayRange, localTime,dateTime,generatedItem,timeLabel,layout, windows, busyInterval, meetingInterval, status, normalizeItem, digest, digestText, format };
   globalThis.ScheduleAgenda = api;
   if (typeof window !== 'undefined') window.ScheduleAgenda = api;
 })();

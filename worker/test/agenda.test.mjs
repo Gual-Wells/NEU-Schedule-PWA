@@ -27,16 +27,88 @@ function setup() {
   };
   return {sqlite,env,call};
 }
-const generated=(title='提交论文',time='2026-11-01T12:00',question='')=>({summary:'按申请上下文选定论文提交，忽略旁边的讲座通知',items:[{key:'task',kind:'deadline',title,localTime:time,localEnd:null,location:'',evidence:'论文于11月1日12点截止',question,sourceImages:[1]}]});
+const generated=(title='提交论文',time='2026-11-01T12:00',question='')=>({summary:'按申请上下文选定论文提交，忽略旁边的讲座通知',items:[{key:'task',kind:'deadline',title,localTime:time,localEnd:null,location:'',evidence:'论文于11月1日12点截止',question,dateStart:null,dateEnd:null,inference:'',sourceImages:[1]}]});
 async function singleJob(call,nonce='single') {
   const created=await (await call('/imports?nonce='+nonce,imageBytes)).json();
-  const job=(await (await call('/runner/claim',{protocol:3},true)).json()).job;
+  const job=(await (await call('/runner/claim',{protocol:4},true)).json()).job;
   assert.equal(job.id,created.id);return job;
 }
+const relation=(applicationId,itemId=null)=>({type:'update',targetImportId:applicationId,targetItemId:itemId,reason:'同一投票事项的补充通知，保留未变更信息'});
+const allDay=(kind='deadline',date='2026-10-20')=>({summary:'按通知日期全天预留',items:[{...generated().items[0],kind,title:'医保办理',localTime:null,dateStart:date,dateEnd:date,inference:'原文仅写10.20之前，按10月20日全天预留'}]});
+
+test('date-only activities and deadlines cover whole campus days, preserve precision and block gym',async()=>{
+  const date='2026-10-20',[start,end]=A.dayRange(date);
+  for(const kind of ['activity','deadline']){
+    const v=A.generatedItem(allDay(kind).items[0]);
+    assert.deepEqual(A.windows(v),{from:start,coreFrom:start,coreTo:end,to:end});
+    assert.equal(A.timeLabel(v),'2026-10-20 全天');
+    assert.equal(A.busyInterval(v,start+12*A.HOUR)[1],Infinity);
+    assert.equal(A.busyInterval({...v,resolvedAt:start+12*A.HOUR},end)[1],start+12*A.HOUR);
+    assert.throws(()=>A.generatedItem({...allDay(kind).items[0],dateStart:'2026-02-30'}));
+  }
+  const {call,env}=setup(),job=await singleJob(call);
+  assert.equal((await call('/runner/result/'+job.id,allDay(),true,job.claim)).status,200);
+  const review=await (await call('/imports/'+job.id)).json();
+  const applied=await (await call('/agenda/commit',{id:'all-day',type:'apply',importId:job.id,revision:review.revision})).json();
+  assert.equal(applied.items[0].dateStart,date);assert.equal(applied.items[0].anchorAt,end);
+  assert.equal(await agendaBlocksGym(env,start+6*A.HOUR,start+7*A.HOUR,start-1),true);
+  assert.match(A.digestText(A.digest(applied.items,[],start-A.HOUR)),/2026-10-20 全天/);
+});
+
+test('new uploads can complete an earlier unconfirmed application, then update the same item',async()=>{
+  const {call,sqlite}=setup(),original=await singleJob(call,'original');
+  await call('/runner/result/'+original.id,allDay('activity'),true,original.claim);
+  const earlier=await (await call('/imports/'+original.id)).json();
+  const extra=await singleJob(call,'extra');
+  assert(extra.knownApplications.some(v=>v.applicationId===original.id));
+  const result={...generated('人大代表投票','2026-10-20T14:50'),relation:relation(original.id)};
+  result.items[0].kind='activity';result.items[0].localEnd='2026-10-20T15:40';result.items[0].location='信息B520';
+  assert.equal((await call('/runner/result/'+extra.id,result,true,extra.claim)).status,200);
+  let review=await (await call('/imports/'+extra.id)).json();
+  const applied=await (await call('/agenda/commit',{id:'complete-original',type:'apply',importId:extra.id,revision:review.revision})).json();
+  assert.equal(applied.items.length,1);const id=applied.items[0].id;
+  assert.equal((await call('/agenda/commit',{id:'stale-original',type:'apply',importId:original.id,revision:earlier.revision})).status,409);
+  assert.deepEqual((await (await call('/imports/'+original.id)).json()).linkedItemIds,[id]);
+  const followup=await singleJob(call,'followup');
+  assert.equal(followup.knownApplications.find(v=>v.applicationId===original.id).item.id,id);
+  const changed={...result,relation:relation(original.id,id),items:[{...result.items[0],title:'人大代表投票（携带身份证和黑色笔）'}]};
+  await call('/runner/result/'+followup.id,changed,true,followup.claim);
+  review=await (await call('/imports/'+followup.id)).json();
+  const updated=await (await call('/agenda/commit',{id:'append-requirements',type:'apply',importId:followup.id,revision:review.revision})).json();
+  assert.equal(updated.items.length,1);assert.equal(updated.items[0].id,id);
+  assert.equal(updated.items[0].dateStart,null);assert.equal(updated.items[0].location,'信息B520');
+  assert.equal(updated.items[0].sources.length,3,'original and both follow-up source bundles remain accessible');
+  assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM agenda_application_items').get().n,1);
+});
+
+test('follow-up targets are limited to the recognition snapshot and stale targets cannot be overwritten',async()=>{
+  const {call,sqlite}=setup(),original=await singleJob(call,'base');
+  await call('/runner/result/'+original.id,allDay(),true,original.claim);
+  const next=await singleJob(call,'update');
+  const result={...allDay(),relation:relation(original.id)};
+  assert.equal((await call('/runner/result/'+next.id,{...result,relation:relation('invented-id')},true,next.claim)).status,400);
+  assert.equal((await call('/runner/result/'+next.id,result,true,next.claim)).status,200);
+  let originalReview=await (await call('/imports/'+original.id)).json();
+  await call('/imports/'+original.id+'/feedback',{id:'change-source',revision:originalReview.revision,text:'已有申请又补充了时间'});
+  const reviewed=await (await call('/imports/'+next.id)).json();
+  assert.equal((await call('/agenda/commit',{id:'stale-context',type:'apply',importId:next.id,revision:reviewed.revision})).status,409);
+  assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM agenda_items').get().n,0);
+  assert.equal((await (await call('/runner/claim',{protocol:3},true)).json()).job,null,'older runner cannot claim flexible-date requests');
+});
+
+test('half-column layout redistributes widths at each overlap boundary without hiding any entry',()=>{
+  const groups=A.layout([{key:'all-day',from:0,to:24},{key:'one',from:10,to:12},{key:'two',from:11,to:13},{key:'next-day',from:24,to:25}]);
+  assert.equal(groups.length,2);
+  for(const [from,to,n]of [[0,10,1],[10,11,2],[11,12,3],[12,13,2],[13,24,1]]){
+    const active=groups[0].slices.filter(v=>v.from===from&&v.to===to);
+    assert.equal(active.length,n);assert.equal(active.reduce((sum,v)=>sum+v.width,0),1);
+    active.forEach((v,i)=>{assert.equal(v.left,i/n);assert.equal(v.width,1/n);assert(v.left+v.width<=1);});
+  }
+});
 
 test('one application enforces one immutable generated item across protocol boundaries',async()=>{
   const {call,sqlite}=setup(),job=await singleJob(call);
-  assert.equal(job.extractionProtocol,3);
+  assert.equal(job.extractionProtocol,4);
   const value=generated();
   for(const items of [[],[value.items[0],{...value.items[0],key:'other'}]])assert.equal((await call('/runner/result/'+job.id,{...value,items},true,job.claim)).status,400);
   assert.equal((await call('/runner/result/'+job.id,value,true,job.claim)).status,200);
@@ -61,14 +133,14 @@ test('feedback versions the same application; retries and stale workers cannot o
   assert.equal((await call('/imports/'+job.id+'/feedback',value)).status,200);
   assert.equal((await call('/imports/'+job.id+'/feedback',{...value,text:'different'})).status,409);
   assert.equal((await call('/agenda/commit',{id:'stale',type:'apply',importId:job.id,revision:review.revision})).status,409);
-  const next=(await (await call('/runner/claim',{protocol:3},true)).json()).job;
+  const next=(await (await call('/runner/claim',{protocol:4},true)).json()).job;
   assert.equal(next.id,job.id);assert.equal(next.generation,job.generation+1);
   assert.deepEqual(next.previousResult,result);assert.equal(next.feedback.length,1);
   assert.equal((await call('/runner/result/'+job.id,generated('旧回传'),true,job.claim)).status,409);
   review=await (await call('/imports/'+job.id)).json();
   await call('/imports/'+job.id+'/feedback',{id:'feedback-2',revision:review.revision,text:'标题使用最终论文提交'});
   assert.equal((await call('/runner/result/'+job.id,generated('已作废修订'),true,next.claim)).status,409);
-  const final=(await (await call('/runner/claim',{protocol:3},true)).json()).job;
+  const final=(await (await call('/runner/claim',{protocol:4},true)).json()).job;
   await call('/runner/result/'+job.id,generated('最终论文提交'),true,final.claim);
   review=await (await call('/imports/'+job.id)).json();
   assert.equal(review.result.items.length,1);assert.equal(review.feedback.length,2);
@@ -90,7 +162,7 @@ test('revision after apply keeps the item and occupancy until confirmed; expired
   await cleanupAgenda(env,now);
   assert.equal(sqlite.prepare('SELECT title FROM agenda_items').get().title,'原安排');
   assert.equal((await call('/imports/'+job.id+'/cancel',{})).status,409);
-  const next=(await (await call('/runner/claim',{protocol:3},true)).json()).job;
+  const next=(await (await call('/runner/claim',{protocol:4},true)).json()).job;
   assert.equal(next.images.length,0);assert.equal(next.sourceCount,1);
   assert.equal((await call('/imports/'+job.id+'/source/1')).status,410);
   await call('/runner/result/'+job.id,generated('最终论文提交','2026-11-02T12:00'),true,next.claim);
@@ -113,8 +185,8 @@ test('legacy multi-output reviews require feedback before a single item can be c
   let review=await (await call('/imports/'+job.id)).json();
   assert.equal((await call('/agenda/commit',{id:'old-multi',type:'apply',importId:job.id,revision:review.revision})).status,400);
   assert.equal((await call('/imports/'+job.id+'/feedback',{id:'select-target',revision:review.revision,text:'只安排论文提交'})).status,200);
-  const next=(await (await call('/runner/claim',{protocol:3},true)).json()).job;
-  assert.equal(next.extractionProtocol,3);
+  const next=(await (await call('/runner/claim',{protocol:4},true)).json()).job;
+  assert.equal(next.extractionProtocol,4);
   await call('/runner/result/'+job.id,value,true,next.claim);
   review=await (await call('/imports/'+job.id)).json();
   assert.equal((await call('/agenda/commit',{id:'single-now',type:'apply',importId:job.id,revision:review.revision})).status,200);
@@ -128,7 +200,7 @@ test('completion racing with a reviewed rewrite wins without resurrecting or dup
   await call('/agenda/commit',{id:'race-original',type:'apply',importId:job.id,revision:review.revision});
   review=await (await call('/imports/'+job.id)).json();
   await call('/imports/'+job.id+'/feedback',{id:'race-feedback',revision:review.revision,text:'改标题'});
-  const next=(await (await call('/runner/claim',{protocol:3},true)).json()).job;
+  const next=(await (await call('/runner/claim',{protocol:4},true)).json()).job;
   await call('/runner/result/'+job.id,generated('rewritten'),true,next.claim);
   review=await (await call('/imports/'+job.id)).json();
   const batch=env.DB.batch.bind(env.DB);
@@ -184,7 +256,7 @@ test('image claim, stale leases, atomic apply and cancellation cannot resurrect 
   assert(uploaded.id);
   assert.equal((await call('/imports/'+uploaded.id+'/image')).status,200);
   assert.equal((await worker.fetch(new Request('https://app.test/imports/'+uploaded.id+'/image'),env)).status,401);
-  const job=(await (await call('/runner/claim',{protocol:3},true)).json()).job;
+  const job=(await (await call('/runner/claim',{protocol:4},true)).json()).job;
   assert.equal(job.id,uploaded.id);
   const image=await call('/runner/image/'+job.id,undefined,true,job.claim);
   assert.deepEqual(new Uint8Array(await image.arrayBuffer()),png);
@@ -199,16 +271,16 @@ test('image claim, stale leases, atomic apply and cancellation cannot resurrect 
   assert.equal((await call('/agenda/commit',{...op,id:'different'})).status,409);
   assert.equal((await (await call('/agenda')).json()).items.length,1);
   await call('/imports?nonce=img-2',png);
-  const job2=(await (await call('/runner/claim',{protocol:3},true)).json()).job;
+  const job2=(await (await call('/runner/claim',{protocol:4},true)).json()).job;
   await call('/imports/'+job2.id+'/cancel',{});
   assert.equal((await call('/imports/'+job2.id+'/image')).status,410);
   assert.equal((await call('/runner/result/'+job2.id,result,true,job2.claim)).status,409);
   await call('/imports?nonce=img-3',png);
-  const job3=(await (await call('/runner/claim',{protocol:3},true)).json()).job;
+  const job3=(await (await call('/runner/claim',{protocol:4},true)).json()).job;
   sqlite.prepare('UPDATE agenda_imports SET lease_until=? WHERE id=?').run(now-1,job3.id);
   await cleanupAgenda(env,now);
   assert.equal((await call('/runner/result/'+job3.id,result,true,job3.claim)).status,409);
-  assert.equal((await (await call('/runner/claim',{protocol:3},true)).json()).job,null,'expired inference is not automatically retried');
+  assert.equal((await (await call('/runner/claim',{protocol:4},true)).json()).job,null,'expired inference is not automatically retried');
 });
 test('old device sync cannot restore individual meeting notifications or erase digests',async()=>{
   const {sqlite,env}=setup(),token='b'.repeat(43);
@@ -231,7 +303,7 @@ test('image dimensions, quota and expiry are checked by the server',async()=>{
   assert.equal((await call('/imports/'+row.id+'/image')).status,410);
   await cleanupAgenda(env,now);
   assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM agenda_import_chunks').get().n,0);
-  assert.equal((await (await call('/runner/claim',{protocol:3},true)).json()).job,null);
+  assert.equal((await (await call('/runner/claim',{protocol:4},true)).json()).job,null);
   const full=await (await call('/imports?nonce=full',png)).json();
   sqlite.prepare('UPDATE agenda_imports SET byte_length=? WHERE id=?').run(50*1024*1024,full.id);
   assert.equal((await call('/imports?nonce=over-quota',png)).status,409);
@@ -260,7 +332,7 @@ test('a complete multi-image batch is jointly claimed once; sources survive revi
   assert.equal((await (await call('/imports/batches',manifest)).json()).id,created.id);
   assert.equal((await call('/imports/batches',{...manifest,note:'different'})).status,409);
   assert.equal((await call('/imports/'+created.id+'/submit',{})).status,409);
-  assert.equal((await (await call('/runner/claim',{protocol:3},true)).json()).job,null);
+  assert.equal((await (await call('/runner/claim',{protocol:4},true)).json()).job,null);
   for(const [i,image] of manifest.images.entries()) {
     const bytes=Buffer.concat([imageBytes,Buffer.from([i])]);
     assert.equal((await call('/imports/'+created.id+'/images/'+image.id,bytes)).status,200);
@@ -268,13 +340,13 @@ test('a complete multi-image batch is jointly claimed once; sources survive revi
     const full=await call('/imports/'+created.id+'/source/'+(i+1));
     assert.deepEqual(Buffer.from(await full.arrayBuffer()),bytes);
     assert.equal(full.headers.get('cache-control'),'no-store');
-    assert.equal((await (await call('/runner/claim',{protocol:3},true)).json()).job,null,'complete uploads still wait for explicit submit');
+    assert.equal((await (await call('/runner/claim',{protocol:4},true)).json()).job,null,'complete uploads still wait for explicit submit');
   }
   const submitted=await (await call('/imports/'+created.id+'/submit',{})).json();
   assert.equal(submitted.uploadState,'ready');
   assert.equal((await (await call('/imports/'+created.id+'/submit',{})).json()).revision,submitted.revision);
   assert.equal((await (await call('/runner/claim',{},true)).json()).job,null,'legacy workers cannot claim image bundles');
-  const job=(await (await call('/runner/claim',{protocol:3},true)).json()).job;
+  const job=(await (await call('/runner/claim',{protocol:4},true)).json()).job;
   assert.equal((await (await call('/runner/claim',{protocol:2},true)).json()).job,null);
   assert.equal(job.protocol,2);assert.deepEqual(job.images.map(v=>v.position),[1,2]);
   const result={summary:'联合识别',items:[{key:'one',kind:'deadline',title:'跨图论文任务',localTime:'2026-11-01T12:00',localEnd:null,location:'A101',evidence:'图1内容，图2时间',question:'',sourceImages:[1,2]}]};
