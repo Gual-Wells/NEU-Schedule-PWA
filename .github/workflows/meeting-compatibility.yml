@@ -36,6 +36,7 @@ jobs:
         run: |
           node scripts/validate.mjs
           node scripts/validate-ui.mjs
+          node scripts/validate-agenda-ui.mjs
           node scripts/validate-gym.mjs
           node scripts/validate-cloud.mjs
           node scripts/validate-login.mjs

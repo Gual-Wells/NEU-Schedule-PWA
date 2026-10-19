@@ -619,3 +619,6 @@ h2 { margin: 0; font-size: 17px; line-height: 1.2; }
 .agenda-source-details a { margin-right:8px; }
 .push-status:empty, .calendar-status:empty, .gym-message:empty, #agendaSelectionStatus:empty, #agendaSource:empty, #agendaEditorStatus:empty, #agendaReviewStatus:empty, .login-body p:empty, .calendar-bar > span:empty { display:none; }
 .calendar-bar-actions { margin-left:auto; }
+
+.agenda-detail-actions { margin-top:10px; }
+#agendaDetailSources p { font-size:12px; line-height:1.5; overflow-wrap:anywhere; }
