@@ -10,10 +10,10 @@
   <meta name="apple-mobile-web-app-title" content="课表" />
   <meta name="format-detection" content="telephone=no" />
   <title>课表</title>
-  <link rel="manifest" href="./manifest.webmanifest?v=35" />
+  <link rel="manifest" href="./manifest.webmanifest?v=36" />
   <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
   <link rel="icon" href="./icons/icon-192.png" />
-  <link rel="stylesheet" href="./styles.css?v=35" />
+  <link rel="stylesheet" href="./styles.css?v=36" />
 </head>
 <body>
   <main class="app-shell" id="app">
@@ -79,6 +79,16 @@
         <div class="agenda-feedback"><label for="agendaFeedback">反馈修改</label><textarea id="agendaFeedback" maxlength="2000" rows="3" placeholder="需要修正或补充的信息"></textarea><button type="button" id="agendaSendFeedback">提交反馈并重新生成</button></div>
       </section>
       <form id="agendaEditor" hidden><p id="agendaSource"></p><div id="agendaCandidates"></div><p id="agendaEditorStatus" role="status"></p><div class="push-actions"><button type="submit">添加事项</button><button type="button" id="agendaBack">返回</button></div></form>
+    </div>
+  </dialog>
+
+  <dialog id="agendaDetailDialog" class="sheet-dialog" aria-labelledby="agendaDetailTitle">
+    <div class="sheet">
+      <div class="sheet-head"><div><span class="sheet-kicker" id="agendaDetailKind">事项详情</span><h2 id="agendaDetailTitle"></h2></div><button type="button" class="close-button" id="closeAgendaDetail" aria-label="关闭">×</button></div>
+      <div id="agendaDetailBody" class="detail-grid"></div>
+      <div id="agendaDetailSources"></div>
+      <p id="agendaDetailStatus" class="calendar-status" role="status"></p>
+      <div class="push-actions agenda-detail-actions"><button type="button" id="agendaDetailEnd">结束活动</button><button type="button" id="agendaDetailCancel" hidden>取消安排</button></div>
     </div>
   </dialog>
 
@@ -167,14 +177,14 @@
     </form>
   </dialog>
 
-  <script src="./agenda-core.js?v=35"></script>
-  <script src="./agenda-upload.js?v=35"></script>
-  <script src="./agenda-client.js?v=35"></script>
-  <script src="./gym-store.js?v=35"></script>
-  <script src="./meeting-store.js?v=35"></script>
-  <script src="./webauthn-browser.js?v=35"></script>
-  <script src="./auth-client.js?v=35"></script>
-  <script src="./cloud-sync.js?v=35"></script>
-  <script src="./bootstrap.js?v=35"></script>
+  <script src="./agenda-core.js?v=36"></script>
+  <script src="./agenda-upload.js?v=36"></script>
+  <script src="./agenda-client.js?v=36"></script>
+  <script src="./gym-store.js?v=36"></script>
+  <script src="./meeting-store.js?v=36"></script>
+  <script src="./webauthn-browser.js?v=36"></script>
+  <script src="./auth-client.js?v=36"></script>
+  <script src="./cloud-sync.js?v=36"></script>
+  <script src="./bootstrap.js?v=36"></script>
 </body>
 </html>

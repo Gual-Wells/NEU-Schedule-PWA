@@ -4,7 +4,7 @@
   const KEY = 'neu-agenda-v1', QUEUE = 'neu-agenda-queue-v1';
   const read = (key, fallback) => { try { return JSON.parse(localStorage.getItem(key)) || fallback; } catch { return fallback; } };
   let state = read(KEY, { items: [], imports: [], digests: [] }), queue = read(QUEUE, []);
-  let meetingActions={},popupGroups=new Map();
+  let meetingActions={},popupGroups=new Map(),detailId=null,detailError='';
   let onChange = () => {}, busy = null, editing = null, message = '', initialized = false, lastSync=0;
   const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const uuid = () => crypto.randomUUID();
@@ -28,12 +28,14 @@
   async function request(path, value) { return window.ScheduleAuth.request(path, value === undefined ? undefined : {...value, protocol:1}); }
   function changed() {
     onChange();
+    if ($('agendaDetailDialog')?.open) renderDetail();
     if(!$('agendaDialog')?.open)return;
     if(!editing)render();
     else if(editing.id){const job=state.imports.find(v=>v.id===editing.id);if(job&&(job.revision!==editing.revision||job.status!==editing.status))review(job);}
   }
   function sync() {
     if (busy) return busy;
+    let completed = false;
     busy = (async () => {
       while (queue.length) {
         const op = queue[0];
@@ -44,14 +46,15 @@
             const rejected = read('neu-agenda-rejected-v1', []);
             rejected.push({op,error:error.message,at:Date.now()});
             localStorage.setItem('neu-agenda-rejected-v1',JSON.stringify(rejected.slice(-20)));
+            if (op.itemId === detailId) detailError = error.message;
             queue.shift(); save(); message = '一项操作未被云端接受：' + error.message; changed(); continue;
           }
           throw error;
         }
         queue.shift(); save(); changed();
       }
-      state = await request('/agenda'); lastSync=Date.now(); save(); changed();
-    })().catch(error => { message = '等待同步：' + error.message; changed(); throw error; }).finally(() => { busy = null; });
+      state = await request('/agenda'); lastSync=Date.now(); save(); changed(); completed=true;
+    })().catch(error => { message = '等待同步：' + error.message; changed(); throw error; }).finally(() => { busy = null; if(completed && queue.length) sync().catch(()=>{}); });
     return busy;
   }
   function enqueue(op) { queue.push(op); save(); changed(); sync().catch(() => {}); }
@@ -70,7 +73,7 @@
         <small>${names[status]}${esc(record)}</small><small>${esc(windowText(v))}</small>
         ${v.inference ? `<p class="agenda-inference">推断依据：${esc(v.inference)}</p>` : ''}
         ${v.evidence || v.sourceImportId || v.sources?.length ? `<details class="agenda-source-details"><summary>原文与来源</summary>${v.evidence ? `<p>${esc(v.evidence)}</p>` : ''}${sourceLinks(v)}</details>` : ''}
-        <div class="push-actions">${!ended && (v.kind === 'deadline' || Date.now() >= v.anchorAt) ? `<button type="button" data-agenda-resolve="${esc(v.id)}">${v.kind === 'deadline' ? 'DDL 达成' : '结束活动'}</button>` : ''}${!ended && Date.now() < w.from ? `<button type="button" data-agenda-cancel="${esc(v.id)}">取消安排</button>` : ''}</div></article>`;
+        <div class="push-actions"><button type="button" data-agenda-detail="${esc(v.id)}">查看详情</button>${!ended && (v.kind === 'deadline' || Date.now() >= v.anchorAt) ? `<button type="button" data-agenda-resolve="${esc(v.id)}">${v.kind === 'deadline' ? 'DDL 达成' : '结束活动'}</button>` : ''}${!ended && Date.now() < w.from ? `<button type="button" data-agenda-cancel="${esc(v.id)}">取消安排</button>` : ''}</div></article>`;
     }).join('');
     const importNames = {queued:'等待本机识别',running:'正在识别',review:'待确认入表',applied:'已入表',failed:'识别失败',cancelled:'已取消'};
     $('agendaContent').innerHTML = `<h3>待处理事项 · ${pending.length}</h3>${cards(pending) || '<p>暂无待处理事项</p>'}
@@ -79,11 +82,58 @@
       <h3 id="agendaDigestHeading">早晚汇总 <small>07:00 / 22:00</small></h3>${state.digests.map(v => `<details class="agenda-card"><summary>${A.format(v.slotAt)} · ${v.entries.length} 项</summary><pre>${esc(A.digestText(v.entries))}</pre></details>`).join('') || '<p>暂无汇总记录</p>'}`;
   }
   function open(id) {
+    if (id && id !== 'digest') return openDetail(id);
     editing = null; $('agendaStatus').hidden=false; $('agendaUploadPanel').hidden=false; $('agendaReview').hidden=true; $('agendaEditor').hidden = true; $('agendaContent').hidden = false;
     render(); if (!$('agendaDialog').open) $('agendaDialog').showModal();
     sync().catch(()=>{});
-    if(id&&id!=='digest')setTimeout(()=>document.querySelector('[data-agenda-item="'+CSS.escape(id)+'"]')?.scrollIntoView({block:'center'}),100);
     if (id === 'digest') setTimeout(()=>$('agendaDigestHeading')?.scrollIntoView({block:'start'}),100);
+  }
+  function renderDetail() {
+    const item = overlay().find(v => v.id === detailId), button = $('agendaDetailEnd');
+    if (!item) {
+      $('agendaDetailTitle').textContent = '事项已移除';
+      $('agendaDetailBody').innerHTML = ''; $('agendaDetailSources').innerHTML = '';
+      button.hidden = true; $('agendaDetailCancel').hidden = true;
+      $('agendaDetailStatus').textContent = '此事项已不在当前安排中';
+      return;
+    }
+    const w = A.windows(item), now = Date.now(), ended = item.resolvedAt != null || item.cancelledAt != null;
+    const cell = (label, value, full = false) => `<div class="detail-item ${full ? 'full' : ''}"><span>${esc(label)}</span><strong>${esc(value)}</strong></div>`;
+    const status = item.resolvedAt != null && item.kind === 'activity' ? '已结束' : names[A.status(item)];
+    $('agendaDetailKind').textContent = item.kind === 'deadline' ? 'DDL 详情' : '活动详情';
+    $('agendaDetailTitle').textContent = item.title;
+    $('agendaDetailBody').innerHTML = [
+      cell(item.kind === 'deadline' ? '截止时间' : '活动时间', A.timeLabel(item), true),
+      cell('地点', item.location || '未填写'), cell('状态', status),
+      cell('预留时间', item.dateStart ? A.timeLabel(item) : A.format(w.from) + '—' + A.format(w.to), true),
+      ...(!item.dateStart && !item.explicitEndAt ? [cell('核心时段', A.format(w.coreFrom) + '—' + A.format(w.coreTo), true)] : []),
+      cell('健身时间占用', ended ? '已释放' : now >= w.from ? '占用中' : '已预留'),
+      ...(item.resolvedAt != null ? [cell(item.kind === 'deadline' ? '达成时间' : '实际结束', A.format(item.resolvedAt), true)] : []),
+      ...(item.cancelledAt != null ? [cell('取消时间', A.format(item.cancelledAt), true)] : []),
+      ...(item.inference ? [cell('推断依据', item.inference, true)] : [])
+    ].join('');
+    $('agendaDetailSources').innerHTML = item.evidence || item.sourceImportId || item.sources?.length ? `<details class="agenda-source-details"><summary>原文与来源</summary>${item.evidence ? `<p>${esc(item.evidence)}</p>` : ''}${sourceLinks(item)}</details>` : '';
+    button.hidden = ended; button.disabled = item.kind === 'activity' && now < item.anchorAt;
+    button.textContent = item.kind === 'deadline' ? 'DDL 达成' : button.disabled ? '开始后可结束' : '结束活动';
+    $('agendaDetailCancel').hidden = ended || now >= w.from;
+    const pending = queue.find(op => op.itemId === item.id);
+    $('agendaDetailStatus').textContent = detailError ? '操作未生效：' + detailError : pending ? '已在本机记录 · ' + (message.startsWith('等待同步：') ? message : '等待同步') : '';
+  }
+  function openDetail(id) {
+    detailId = id; detailError = ''; editing = null;
+    if ($('nonCourseDialog').open) $('nonCourseDialog').close();
+    if ($('agendaDialog').open) $('agendaDialog').close();
+    renderDetail();
+    if (!$('agendaDetailDialog').open) $('agendaDetailDialog').showModal();
+    sync().catch(() => {});
+  }
+  function finishDetail(type) {
+    const item = overlay().find(v => v.id === detailId), now = Date.now();
+    if (!item || item.resolvedAt != null || item.cancelledAt != null) return;
+    if (type === 'resolve' && item.kind === 'activity' && now < item.anchorAt) return;
+    if (type === 'cancel' && now >= A.windows(item).from) return;
+    detailError = ''; message = '';
+    enqueue({id:uuid(),type,itemId:item.id,at:now});
   }
   function windowText(value) {
     const w = A.windows(value);
@@ -144,8 +194,12 @@
   }
   function init(change,options={}) {
     onChange=change;meetingActions=options; if(initialized) return; initialized=true;
+    $('closeAgendaDetail').addEventListener('click',()=>{detailId=null;$('agendaDetailDialog').close();});
+    $('agendaDetailDialog').addEventListener('close',()=>{detailId=null;});
+    $('agendaDetailEnd').addEventListener('click',()=>finishDetail('resolve'));
+    $('agendaDetailCancel').addEventListener('click',()=>finishDetail('cancel'));
     $('closeNonCourse').addEventListener('click',()=>$('nonCourseDialog').close());
-    $('nonCourseContent').addEventListener('click',event=>{const b=event.target.closest('button');if(!b)return;if(b.dataset.popupAgenda){$('nonCourseDialog').close();open(b.dataset.popupAgenda);}if(b.dataset.popupMeeting){$('nonCourseDialog').close();meetingActions.openMeeting?.(b.dataset.popupMeeting);}});
+    $('nonCourseContent').addEventListener('click',event=>{const b=event.target.closest('button');if(!b)return;if(b.dataset.popupAgenda){$('nonCourseDialog').close();openDetail(b.dataset.popupAgenda);}if(b.dataset.popupMeeting){$('nonCourseDialog').close();meetingActions.openMeeting?.(b.dataset.popupMeeting);}});
     document.addEventListener('click',event=>{const b=event.target.closest('[data-noncourse-group]');if(b)openGroup(b.dataset.noncourseGroup);});
     $('agendaButton').addEventListener('click',()=>open());
     $('closeAgenda').addEventListener('click',()=>{editing=null;$('agendaDialog').close();});
@@ -193,6 +247,7 @@
     $('agendaContent').addEventListener('click',async event=>{
       const b=event.target.closest('button');if(!b)return;
       try {
+        if(b.dataset.agendaDetail) {openDetail(b.dataset.agendaDetail);return;}
         if(b.dataset.agendaReview) {const job=state.imports.find(v=>v.id===b.dataset.agendaReview);if(job)review(job);return;}
         if(b.dataset.importCancel) {await request('/imports/'+b.dataset.importCancel+'/cancel',{});await sync();return;}
         const id=b.dataset.agendaResolve||b.dataset.agendaCancel;
@@ -202,7 +257,7 @@
     window.addEventListener('online',()=>sync().catch(()=>{}));
     window.addEventListener('focus',()=>sync().catch(()=>{}));
     document.addEventListener('visibilitychange',()=>{if(!document.hidden)sync().catch(()=>{});});
-    setInterval(()=>{if(!document.hidden){if($('agendaDialog').open&&!editing)render();const delay=$('agendaDialog').open&&state.imports.some(v=>['queued','running'].includes(v.status))?15000:60000;if(Date.now()-lastSync>=delay)sync().catch(()=>{});}},15000);
+    setInterval(()=>{if(!document.hidden){if($('agendaDialog').open&&!editing)render();if($('agendaDetailDialog').open)renderDetail();const delay=$('agendaDialog').open&&state.imports.some(v=>['queued','running'].includes(v.status))?15000:60000;if(Date.now()-lastSync>=delay)sync().catch(()=>{});}},15000);
     sync().catch(()=>{});
     if(new URLSearchParams(location.search).has('agenda'))open('digest');
   }
@@ -219,6 +274,7 @@
   }
   function openGroup(key) {
     const group=popupGroups.get(key);if(!group)return;
+    if(group.entries.length===1){const entry=group.entries[0];if(entry.type==='agenda')openDetail(entry.id);else meetingActions.openMeeting?.(entry.id);return;}
     $('nonCourseTitle').textContent=group.dayKey+' · '+group.entries.length+' 项安排';
     $('nonCourseContent').innerHTML=group.entries.map(v=>`<article class="agenda-card"><strong>${esc(v.title)}</strong><p>${esc(v.time)}</p>${v.value.location?`<p>${esc(v.value.location)}</p>`:''}<small>${v.type==='agenda'?names[A.status(v.value)]:v.ended?'已结束':Date.now()<v.value.startAt?'待开始':'进行中'}</small><button type="button" ${v.type==='meeting'?'data-popup-meeting':'data-popup-agenda'}="${esc(v.id)}">查看详情</button></article>`).join('');
     if(!$('nonCourseDialog').open)$('nonCourseDialog').showModal();
@@ -247,5 +303,5 @@
   }
   function overlaps(dayKey,from,to,meetings=[]) {return intervals(dayKey,meetings).some(v=>v.from<to&&from<v.to);}
 
-  window.AgendaClient={init,sync,list:overlay,blocks,daySummary,overlaps,open,escape:esc};
+  window.AgendaClient={init,sync,list:overlay,blocks,daySummary,overlaps,open,openDetail,escape:esc};
 })();

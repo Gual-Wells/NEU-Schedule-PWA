@@ -1105,7 +1105,7 @@
     pushStatus('正在建立订阅…');
     try {
       const config = await pushRequest('/config');
-      const registration = await navigator.serviceWorker.register('./sw.js?v=35', { updateViaCache: 'none' });
+      const registration = await navigator.serviceWorker.register('./sw.js?v=36', { updateViaCache: 'none' });
       let subscription = await registration.pushManager.getSubscription();
       if (subscription) {
         const oldKey = subscription.options?.applicationServerKey;
@@ -1290,7 +1290,7 @@
     setupCalendar();
     setupPush();
     window.AgendaClient?.init(() => { renderAll(); schedulePushSync(); },{openMeeting});
-    document.addEventListener('click', event => { const button=event.target.closest('[data-agenda-open]');if(button)window.AgendaClient?.open(button.dataset.agendaOpen); });
+    document.addEventListener('click', event => { const button=event.target.closest('[data-agenda-open]');if(button)window.AgendaClient?.openDetail(button.dataset.agendaOpen); });
     $('cloudButton').addEventListener('click', () => {
       if (!$('cloudStatus').textContent) cloudStatus(cloud?.connected() ? '云端已连接' : '请使用通行密钥登录');
       $('cloudDialog').showModal();
@@ -1312,7 +1312,7 @@
     renderAll();
     initCloud();
     clearAttentionBadge();
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js?v=35', { updateViaCache: 'none' }).then(schedulePushSync).catch(() => {});
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js?v=36', { updateViaCache: 'none' }).then(schedulePushSync).catch(() => {});
     setInterval(() => {
       if (refreshDailyState()) { renderAll(); return; }
       renderHeader();
