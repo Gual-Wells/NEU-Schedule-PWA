@@ -2,11 +2,13 @@ import { readFile, writeFile, mkdir, rename, readdir, rm, stat } from 'node:fs/p
 import { resolve, join } from 'node:path';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { resolveCodexPath } from './codex-path.mjs';
 import '../agenda-core.js';
 
 const config = JSON.parse(await readFile(process.argv[2], 'utf8'));
 if (!/^D:\\/i.test(config.dataDir) || (!/^https:\/\//.test(config.baseUrl) && !(config.localTest===true && /^http:\/\/127\.0\.0\.1:\d+$/.test(config.baseUrl)))) throw Error('Expected D: storage and HTTPS server');
 const root = resolve(config.dataDir), A = globalThis.ScheduleAgenda;
+let codexPath;
 await mkdir(root, { recursive: true });
 const schema = JSON.parse(await readFile(new URL('../protocol/agenda-extraction.schema.json',import.meta.url),'utf8'));
 async function api(path, job, value) {
@@ -39,7 +41,7 @@ async function infer(job, dir, images) {
     '-C',dir,'-m',config.model||'gpt-6-sol','-c','model_reasoning_effort='+JSON.stringify(config.reasoningEffort||'medium'),'-c','web_search="disabled"','-s','read-only',
     ...disabled.flatMap(f=>['--disable',f]),...images.flatMap(image=>['--image',image]),'--output-schema',schemaPath,'-o',output,'-'];
   await new Promise((resolvePromise,reject)=>{
-    const child=spawn(config.codexPath,args,{cwd:dir,env:childEnv,windowsHide:true,stdio:['pipe','ignore','pipe']});
+    const child=spawn(codexPath,args,{cwd:dir,env:childEnv,windowsHide:true,stdio:['pipe','ignore','pipe']});
     let errorText='';child.stderr.on('data',v=>{errorText=(errorText+v).slice(-6000);});
     const timeout=setTimeout(()=>{child.kill();reject(Error('Inference timed out'));},8*60000);
     child.on('error',error=>{clearTimeout(timeout);reject(error);});
@@ -100,6 +102,9 @@ for(const entry of await readdir(root,{withFileTypes:true})) {
     const job=JSON.parse(await readFile(join(dir,'job.json'),'utf8'));if([2,3,4].includes(job.extractionProtocol))await processJob(job,dir,true);
   }
 }
+// Cached results above can still upload while the CLI is unavailable. New work
+// is claimed only after a local, non-inference executable check succeeds.
+codexPath=await resolveCodexPath(config.codexPath);
 const {job}=await (await api('/runner/claim',null,{protocol:4})).json();
 if(job) {
   job.claimedAt=Date.now();const dir=join(root,job.id+'-g'+job.generation);await mkdir(dir,{recursive:true});await writeFile(join(dir,'job.json'),JSON.stringify(job));
