@@ -205,7 +205,7 @@
       data-meeting="${meeting.id}" aria-label="${title} ${timeLabel}" style="top:${pct((from - dayStart) / 60000)}%;height:${pct(whole / 60000) - pct(0)}%">
       ${solid > 0 ? `<span class="meeting-solid" style="height:${solid / whole * 100}%"></span>` : ''}
       ${extension > 0 ? `<span class="meeting-extension ${finished ? 'actual' : ''}" style="top:${solid / whole * 100}%;height:${extension / whole * 100}%"></span>` : ''}
-      <span class="meeting-copy"><strong>${title}</strong><small>${size === 'week' ? meetingClock(meeting.startAt) : timeLabel}</small></span>
+      <span class="meeting-copy"><strong>${title}${finished?' · 已结束':''}</strong><small>${size === 'week' ? meetingClock(meeting.startAt) : timeLabel}</small></span>
     </button>`;
   }
 
@@ -1105,7 +1105,7 @@
     pushStatus('正在建立订阅…');
     try {
       const config = await pushRequest('/config');
-      const registration = await navigator.serviceWorker.register('./sw.js?v=37', { updateViaCache: 'none' });
+      const registration = await navigator.serviceWorker.register('./sw.js?v=38', { updateViaCache: 'none' });
       let subscription = await registration.pushManager.getSubscription();
       if (subscription) {
         const oldKey = subscription.options?.applicationServerKey;
@@ -1312,7 +1312,7 @@
     renderAll();
     initCloud();
     clearAttentionBadge();
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js?v=37', { updateViaCache: 'none' }).then(schedulePushSync).catch(() => {});
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js?v=38', { updateViaCache: 'none' }).then(schedulePushSync).catch(() => {});
     setInterval(() => {
       if (refreshDailyState()) { renderAll(); return; }
       renderHeader();
