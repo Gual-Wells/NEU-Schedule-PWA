@@ -515,7 +515,7 @@ h2 { margin: 0; font-size: 17px; line-height: 1.2; }
   .now-row { grid-template-columns: 58px minmax(0, 1fr); }
 }
 
-/* Independent meeting overlay: retro Web 2.0 palette, no reuse of course's skipped style. */
+/* Independent meeting overlay, with completed states matching skipped courses. */
 .day-chip.has-meeting .dom::after { content: "·组"; color: #4b5e9a; font-size: 8px; font-weight: 700; }
 .calendar-bar > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .calendar-bar-actions { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; flex: 0 0 auto; }
@@ -525,8 +525,6 @@ h2 { margin: 0; font-size: 17px; line-height: 1.2; }
 .meeting-block .meeting-solid { top: 0; border: 1px solid #7b92b1; border-left: 4px solid #445d95; background: linear-gradient(95deg, #dbe5f4, #b6cbe2); box-shadow: 0 1px 0 #fff9 inset; }
 .meeting-block .meeting-extension { border: 1px dashed #5c6b9f; border-left: 4px dashed #5c6b9f; background: repeating-linear-gradient(135deg, #eef1fa, #eef1fa 7px, #dfe7f5 7px, #dfe7f5 14px); }
 .meeting-block .meeting-extension.actual { border-style: solid; border-left-style: solid; background: linear-gradient(95deg, #d0dcec, #b5c5df); }
-.meeting-block.completed .meeting-solid { background: linear-gradient(95deg, #d6e9e2, #b7d5c7); border-left-color: #3e7b68; }
-.meeting-block.completed .meeting-extension.actual { border-left-color: #3e7b68; background: linear-gradient(95deg, #d7e5df, #b9d4ce); }
 .meeting-block.capped .meeting-extension { background: repeating-linear-gradient(135deg, #f9f0da, #f9f0da 7px, #f2e4c6 7px, #f2e4c6 14px); border-color: #ac8a4b; }
 .meeting-copy { position: absolute; z-index: 1; top: 4px; left: 5px; right: 1px; display: grid; gap: 1px; pointer-events: none; color: #263e6d; }
 .meeting-copy strong { font-size: 11px; line-height: 1.1; overflow-wrap: anywhere; }
@@ -570,6 +568,10 @@ h2 { margin: 0; font-size: 17px; line-height: 1.2; }
 .agenda-block.deadline { border-color: #af7133; color: #704415; }
 .agenda-block.deadline .meeting-solid { background: #f3d9b2; }
 .agenda-block.deadline .meeting-extension { background: #fcf2e4; border-color: #af7133; }
+.meeting-block.completed { border:1px dashed #7891a7; background:#e9eef3; color:#536c82; box-shadow:none; }
+.meeting-block.completed .meeting-solid, .meeting-block.completed .meeting-extension { border:0; background:none; box-shadow:none; }
+.meeting-block.completed .meeting-copy { color:#536c82; }
+.agenda-card.resolved, .all-day-chip.completed { border:1px dashed #7891a7; background:#e9eef3; color:#536c82; box-shadow:none; }
 .agenda-upload .push-actions { flex-wrap: wrap; }
 .agenda-image-list { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
 .agenda-image-preview { display: grid; gap: 6px; padding: 8px; border: 1px solid #b6c7d7; border-radius: 8px; min-width: 0; background: #fff; }
@@ -588,7 +590,8 @@ h2 { margin: 0; font-size: 17px; line-height: 1.2; }
 .meeting-week, .meeting-day { left:50%; right:1px; }
 .noncourse-region { position:absolute; left:50%; right:1px; z-index:6; overflow:hidden; min-height:3px; }
 .noncourse-region.day { right:7px; }
-.noncourse-region .noncourse-strip { position:absolute; display:block; right:auto; border-right:1px solid #fff; box-sizing:border-box; box-shadow:none; }
+.noncourse-region .noncourse-strip { position:absolute; display:block; right:auto; box-sizing:border-box; box-shadow:none; }
+.noncourse-region .noncourse-strip:not(.completed) { border-right:1px solid #fff; }
 .noncourse-region .meeting-copy { left:3px; right:1px; top:3px; }
 .noncourse-region .meeting-copy strong { font-size:9px; overflow:hidden; max-height:5.5em; }
 .noncourse-region.day .meeting-copy strong { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; max-height:2.6em; font-size:12px; }

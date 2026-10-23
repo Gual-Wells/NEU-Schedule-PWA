@@ -276,13 +276,13 @@
     const group=popupGroups.get(key);if(!group)return;
     if(group.entries.length===1){const entry=group.entries[0];if(entry.type==='agenda')openDetail(entry.id);else meetingActions.openMeeting?.(entry.id);return;}
     $('nonCourseTitle').textContent=group.dayKey+' · '+group.entries.length+' 项安排';
-    $('nonCourseContent').innerHTML=group.entries.map(v=>`<article class="agenda-card"><strong>${esc(v.title)}</strong><p>${esc(v.time)}</p>${v.value.location?`<p>${esc(v.value.location)}</p>`:''}<small>${v.type==='agenda'?names[A.status(v.value)]:v.ended?'已结束':Date.now()<v.value.startAt?'待开始':'进行中'}</small><button type="button" ${v.type==='meeting'?'data-popup-meeting':'data-popup-agenda'}="${esc(v.id)}">查看详情</button></article>`).join('');
+    $('nonCourseContent').innerHTML=group.entries.map(v=>`<article class="agenda-card ${v.ended?'resolved':''}"><strong>${esc(v.title)}</strong><p>${esc(v.time)}</p>${v.value.location?`<p>${esc(v.value.location)}</p>`:''}<small>${v.type==='agenda'?names[A.status(v.value)]:v.ended?'已结束':Date.now()<v.value.startAt?'待开始':'进行中'}</small><button type="button" ${v.type==='meeting'?'data-popup-meeting':'data-popup-agenda'}="${esc(v.id)}">查看详情</button></article>`).join('');
     if(!$('nonCourseDialog').open)$('nonCourseDialog').showModal();
   }
   function daySummary(dayKey) {
     const entries=intervals(dayKey).filter(v=>v.value.dateStart);
     if(!entries.length)return '';
-    return `<div class="day-all-day">${entries.map(v=>`<button type="button" class="all-day-chip" data-agenda-open="${esc(v.id)}"><span>${v.ended?'已完成':v.value.dateEnd<dayKey?'未完成':'全天'}</span><strong>${esc(v.value.title)}</strong></button>`).join('')}</div>`;
+    return `<div class="day-all-day">${entries.map(v=>`<button type="button" class="all-day-chip ${v.ended?'completed':''}" data-agenda-open="${esc(v.id)}"><span>${v.ended?'已完成':v.value.dateEnd<dayKey?'未完成':'全天'}</span><strong>${esc(v.value.title)}</strong></button>`).join('')}</div>`;
   }
   function blocks(dayKey,size,meetings=[]) {
     const [start]=A.dayRange(dayKey),groups=A.layout(intervals(dayKey,meetings));
@@ -295,7 +295,7 @@
         const segment=(from,to,cls)=>{const a=Math.max(from,v.from),b=Math.min(to,v.to);return b>a?`<span class="${cls}" style="top:${(a-v.from)/(v.to-v.from)*100}%;height:${(b-a)/(v.to-v.from)*100}%"></span>`:'';};
         const clock=at=>new Date(at+8*A.HOUR).toISOString().slice(11,16),at=v.type==='meeting'?v.value.startAt:v.value.anchorAt;
         const time=A.dayKey(at)===dayKey?clock(at)+(v.value.explicitEndAt?'—'+clock(v.value.explicitEndAt):''):A.format(at);
-        const label=labels.get(v.key)===v&&v.to-v.from>=20*60000?`<span class="meeting-copy"><strong>${esc(v.value.title||'组会')}</strong>${v.width>=.5?`<small>${esc(time)}</small>`:''}</span>`:'';
+        const label=labels.get(v.key)===v&&v.to-v.from>=20*60000?`<span class="meeting-copy"><strong>${esc(v.value.title||'组会')}${v.ended?' · '+(v.kind==='deadline'?'已达成':'已结束'):''}</strong>${v.width>=.5?`<small>${esc(time)}</small>`:''}</span>`:'';
         return `<span aria-hidden="true" class="meeting-block noncourse-strip ${size==='week'?'meeting-week':'meeting-day'} ${v.kind==='meeting'?'':'agenda-block'} ${v.kind} ${v.ended?'completed':''}" style="top:${(v.from-g.from)/(g.to-g.from)*100}%;height:${(v.to-v.from)/(g.to-g.from)*100}%;left:${v.left*100}%;width:${v.width*100}%">${segment(v.from,v.coreFrom,'meeting-extension')}${segment(v.coreFrom,v.coreTo,'meeting-solid')}${segment(v.coreTo,v.to,'meeting-extension')}${label}</span>`;
       }).join('');
       return `<div class="noncourse-region ${size}" style="top:${(g.from-start)/A.DAY*100}%;height:${(g.to-g.from)/A.DAY*100}%">${strips}<button type="button" class="noncourse-hitbox" data-noncourse-group="${esc(key)}" aria-label="展开 ${dayKey} 的 ${g.entries.length} 项安排">${size==='day'&&g.entries.length>1?`<span>${g.entries.length}</span>`:''}</button></div>`;
