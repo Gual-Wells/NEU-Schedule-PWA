@@ -38,6 +38,17 @@
     const end = meeting.confirmedAt ?? meeting.endAt ?? (now >= meeting.startAt ? Infinity : meeting.startAt + 5 * HOUR);
     return end > meeting.startAt ? [meeting.startAt, end] : null;
   }
+  // Calendar estimates are finite. Open gym occupancy is a separate state,
+  // not an estimated end time to project onto every future calendar date.
+  function displayInterval(item) {
+    if (item.cancelledAt != null) return null;
+    const w = windows(item), end = item.resolvedAt ?? w.to;
+    return end > w.from ? [w.from, end] : null;
+  }
+  function meetingDisplayInterval(meeting) {
+    const end = meeting.confirmedAt ?? meeting.endAt ?? meeting.startAt + 5 * HOUR;
+    return end > meeting.startAt ? [meeting.startAt, end] : null;
+  }
   function status(item, now = Date.now()) {
     if (item.cancelledAt != null) return 'cancelled';
     if (item.resolvedAt != null) return 'resolved';
@@ -89,7 +100,7 @@
         active.forEach((v,lane)=>slices.push({...v,from,to,left:lane/active.length,width:1/active.length}));}
       return {...g,slices};});
   }
-  const api = { HOUR, DAY, dayKey, dayRange, localTime,dateTime,generatedItem,timeLabel,layout, windows, busyInterval, meetingInterval, status, normalizeItem, digest, digestText, format };
+  const api = { HOUR, DAY, dayKey, dayRange, localTime,dateTime,generatedItem,timeLabel,layout, windows, busyInterval, meetingInterval, displayInterval, meetingDisplayInterval, status, normalizeItem, digest, digestText, format };
   globalThis.ScheduleAgenda = api;
   if (typeof window !== 'undefined') window.ScheduleAgenda = api;
 })();

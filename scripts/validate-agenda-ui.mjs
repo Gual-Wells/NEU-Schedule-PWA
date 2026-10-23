@@ -43,6 +43,14 @@ const client = sandbox.window.AgendaClient, A = sandbox.window.ScheduleAgenda;
 const flush = async () => { for (let n=0;n<4;n++) await new Promise(setImmediate); };
 client.init(()=>{}); await flush();
 
+// A running, unconfirmed item may block gym indefinitely, but its estimated
+// calendar block must not turn every later date into the same activity.
+assert.equal(client.blocks('2026-10-20','week'),'','running activities must not spill into tomorrow');
+assert.equal(client.overlaps('2026-10-20',...A.dayRange('2026-10-20')),false,'future courses must retain their full column');
+assert.equal(A.busyInterval(client.list().find(v=>v.id==='ongoing'),now)[1],Infinity,'unconfirmed gym occupancy remains open');
+const legacyMeeting={id:'legacy',startAt:now-hour,endAt:null,confirmedAt:null};
+assert.equal(client.blocks('2026-10-20','day',[legacyMeeting]),'','legacy meeting display must remain bounded too');
+
 client.open();
 assert.equal(node('agendaDialog').open,true);
 client.open('ongoing'); await flush();
@@ -89,4 +97,11 @@ client.openDetail('future'); await flush(); node('agendaDetailCancel').listeners
 assert.equal(remote.items.find(v=>v.id==='future').cancelledAt,now);
 assert.equal(node('agendaDetailCancel').hidden,true);
 assert.equal(node('agendaDetailEnd').hidden,true);
+remote.items=[{...activity('midnight'),anchorAt:A.localTime('2026-10-19T23:30')}];
+await client.sync(); await flush();
+assert.match(client.blocks('2026-10-19','day'),/midnight/,'genuine midnight activity begins on its own date');
+assert.match(client.blocks('2026-10-20','day'),/midnight/,'the next date retains the real three-hour window');
+assert.equal(client.overlaps('2026-10-20',A.localTime('2026-10-20T02:29'),A.localTime('2026-10-20T02:30')),true);
+assert.equal(client.overlaps('2026-10-20',A.localTime('2026-10-20T02:30'),A.localTime('2026-10-20T03:00')),false,'midnight carry-over stops at its finite boundary');
+assert.equal(client.blocks('2026-10-21','week'),'','a real two-date interval must not spread to a third date');
 console.log('Agenda details: separate navigation, end/achieve/cancel, offline recovery, rejection rollback and in-flight refresh race OK');

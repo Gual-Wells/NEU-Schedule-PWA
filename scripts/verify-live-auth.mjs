@@ -4,8 +4,8 @@ const postRunner = () => fetch('https://neu-schedule-push-api.pages.dev/runner/c
 const base = 'https://neu-schedule-push-api.pages.dev';
 const html = await fetch(base + '/', { cache: 'no-store' });
 assert.equal(html.status, 200);
-assert.match(await html.text(), /auth-client\.js\?v=36/);
-const browser = await fetch(base + '/webauthn-browser.js?v=36');
+assert.match(await html.text(), /auth-client\.js\?v=37/);
+const browser = await fetch(base + '/webauthn-browser.js?v=37');
 assert.equal(browser.status, 200);
 const statusResponse = await fetch(base + '/auth/status', { cache: 'no-store' });
 assert.equal(statusResponse.status, 200);

@@ -262,13 +262,13 @@
     if(new URLSearchParams(location.search).has('agenda'))open('digest');
   }
   function intervals(dayKey,meetings=[]) {
-    const [start,end]=A.dayRange(dayKey),now=Date.now(),entries=[];
+    const [start,end]=A.dayRange(dayKey),entries=[];
     for(const v of overlay()){
-      const busy=A.busyInterval(v,now);if(!busy)continue;
+      const busy=A.displayInterval(v);if(!busy)continue;
       const from=Math.max(start,busy[0]),to=Math.min(end,busy[1]);if(to<=from)continue;
       const w=A.windows(v);entries.push({key:'agenda-'+v.id,id:v.id,type:'agenda',kind:v.kind,title:(v.kind==='deadline'?'DDL':'活动')+' · '+v.title,from,to,coreFrom:w.coreFrom,coreTo:w.coreTo,ended:v.resolvedAt!=null,time:A.timeLabel(v),value:v});
     }
-    for(const v of meetings){const busy=A.meetingInterval(v,now);if(!busy)continue;const from=Math.max(start,busy[0]),to=Math.min(end,busy[1]);if(to<=from)continue;
+    for(const v of meetings){const busy=A.meetingDisplayInterval(v);if(!busy)continue;const from=Math.max(start,busy[0]),to=Math.min(end,busy[1]);if(to<=from)continue;
       entries.push({key:'meeting-'+v.id,id:v.id,type:'meeting',kind:'meeting',title:'组会',from,to,coreFrom:v.startAt,coreTo:v.startAt+3*A.HOUR,ended:v.endAt!=null,time:A.format(v.startAt),value:v});}
     return entries;
   }

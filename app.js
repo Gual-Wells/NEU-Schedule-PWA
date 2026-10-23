@@ -191,7 +191,7 @@
   function meetingBlock(meeting, dayKey, size) {
     const [dayStart, dayEnd] = window.MeetingStore.dayRange(dayKey);
     const from = Math.max(dayStart, meeting.startAt);
-    const until = Math.min(dayEnd, window.ScheduleAgenda?.meetingInterval(meeting)?.[1] ?? meetingEnd(meeting));
+    const until = Math.min(dayEnd, window.ScheduleAgenda?.meetingDisplayInterval(meeting)?.[1] ?? meetingEnd(meeting));
     if (until <= from) return '';
     const whole = until - from;
     const expected = meeting.startAt + window.MeetingStore.EXPECTED;
@@ -1105,7 +1105,7 @@
     pushStatus('正在建立订阅…');
     try {
       const config = await pushRequest('/config');
-      const registration = await navigator.serviceWorker.register('./sw.js?v=36', { updateViaCache: 'none' });
+      const registration = await navigator.serviceWorker.register('./sw.js?v=37', { updateViaCache: 'none' });
       let subscription = await registration.pushManager.getSubscription();
       if (subscription) {
         const oldKey = subscription.options?.applicationServerKey;
@@ -1312,7 +1312,7 @@
     renderAll();
     initCloud();
     clearAttentionBadge();
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js?v=36', { updateViaCache: 'none' }).then(schedulePushSync).catch(() => {});
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js?v=37', { updateViaCache: 'none' }).then(schedulePushSync).catch(() => {});
     setInterval(() => {
       if (refreshDailyState()) { renderAll(); return; }
       renderHeader();
