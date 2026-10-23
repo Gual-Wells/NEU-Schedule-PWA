@@ -36,6 +36,23 @@ async function singleJob(call,nonce='single') {
 const relation=(applicationId,itemId=null)=>({type:'update',targetImportId:applicationId,targetItemId:itemId,reason:'同一投票事项的补充通知，保留未变更信息'});
 const allDay=(kind='deadline',date='2026-10-20')=>({summary:'按通知日期全天预留',items:[{...generated().items[0],kind,title:'医保办理',localTime:null,dateStart:date,dateEnd:date,inference:'原文仅写10.20之前，按10月20日全天预留'}]});
 
+test('calendar estimates remain finite while unresolved gym occupancy stays open',()=>{
+  const start=A.localTime('2026-10-23T14:00'),v=A.normalizeItem({kind:'activity',title:'组会',anchorAt:start},start);
+  assert.deepEqual(A.displayInterval(v),[start,start+3*A.HOUR]);
+  assert.equal(A.busyInterval(v,start+A.HOUR)[1],Infinity);
+  assert.deepEqual(A.displayInterval(v),[start,start+3*A.HOUR],'passing time does not rewrite the estimate');
+  assert.deepEqual(A.displayInterval({...v,explicitEndAt:start+2*A.HOUR}),[start,start+2*A.HOUR]);
+  assert.deepEqual(A.displayInterval({...v,kind:'deadline'}),[start-3*A.HOUR,start]);
+  assert.equal(A.displayInterval({...v,cancelledAt:start-1}),null);
+  assert.deepEqual(A.displayInterval({...v,resolvedAt:start+26*A.HOUR}),[start,start+26*A.HOUR],'actual cross-day completion remains visible');
+  const dateRange=A.generatedItem({...allDay('activity').items[0],dateEnd:'2026-10-22'});
+  assert.deepEqual(A.displayInterval(dateRange),[A.dateTime('2026-10-20'),A.dateTime('2026-10-23')]);
+  const m={startAt:start,endAt:null,confirmedAt:null};
+  assert.deepEqual(A.meetingDisplayInterval(m),[start,start+5*A.HOUR]);
+  assert.equal(A.meetingInterval(m,start+6*A.HOUR)[1],Infinity);
+  assert.deepEqual(A.meetingDisplayInterval({...m,confirmedAt:start+7*A.HOUR,endAt:start+5*A.HOUR}),[start,start+7*A.HOUR]);
+});
+
 test('date-only activities and deadlines cover whole campus days, preserve precision and block gym',async()=>{
   const date='2026-10-20',[start,end]=A.dayRange(date);
   for(const kind of ['activity','deadline']){
