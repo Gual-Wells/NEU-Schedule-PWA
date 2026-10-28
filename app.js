@@ -303,6 +303,13 @@
     else renderGymView();
   }
 
+  function dailyMarkers(dayKey, size) {
+    if (dayKey !== dateKey(nowDate())) return '';
+    return (window.ScheduleDailyReminders?.entries || []).map(v =>
+      `<div class="daily-marker ${v.key} ${size}" role="img" aria-label="${v.clock} ${v.label}" style="top:${pct(v.minute)}%"><span class="daily-marker-label"><time>${v.clock}</time><strong>${v.label}</strong></span></div>`
+    ).join('');
+  }
+
   function renderWeekView() {
     const scroll = $('timelineScroll');
     if (!firstTimelineRender) timelineScrollTop = scroll.scrollTop;
@@ -368,6 +375,7 @@
       }
 
       pieces.push(nonCourseBlocks(meetingDayKey,'week'));
+      pieces.push(dailyMarkers(meetingDayKey,'week'));
 
       if (dateKey(addDays(weekMonday, day - 1)) === dateKey(now)) {
         const currentMinutes = now.getHours() * 60 + now.getMinutes();
@@ -616,6 +624,7 @@
       </button>`);
     }
     parts.push(nonCourseBlocks(key,'day'));
+    parts.push(dailyMarkers(key,'day'));
     if (state.live && state.minute >= DAY_START && state.minute <= DAY_END)
       parts.push(`<div class="day-progress" style="height:${pct(state.minute)}%"></div><div class="day-now-line" style="top:${pct(state.minute)}%"><span>${minutesToTime(state.minute)}</span></div>`);
     parts.push('</div></div>');
@@ -1105,7 +1114,7 @@
     pushStatus('正在建立订阅…');
     try {
       const config = await pushRequest('/config');
-      const registration = await navigator.serviceWorker.register('./sw.js?v=38', { updateViaCache: 'none' });
+      const registration = await navigator.serviceWorker.register('./sw.js?v=39', { updateViaCache: 'none' });
       let subscription = await registration.pushManager.getSubscription();
       if (subscription) {
         const oldKey = subscription.options?.applicationServerKey;
@@ -1312,7 +1321,7 @@
     renderAll();
     initCloud();
     clearAttentionBadge();
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js?v=38', { updateViaCache: 'none' }).then(schedulePushSync).catch(() => {});
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js?v=39', { updateViaCache: 'none' }).then(schedulePushSync).catch(() => {});
     setInterval(() => {
       if (refreshDailyState()) { renderAll(); return; }
       renderHeader();

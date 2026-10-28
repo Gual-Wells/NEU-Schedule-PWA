@@ -64,7 +64,7 @@ const sandbox = {
   console
 };
 vm.createContext(sandbox);
-for (const file of ['data.js', 'gym-store.js', 'meeting-store.js', 'app.js'])
+for (const file of ['daily-reminders.js', 'data.js', 'gym-store.js', 'meeting-store.js', 'app.js'])
   vm.runInContext(fs.readFileSync(new URL(`../${file}`, import.meta.url), 'utf8'), sandbox, { filename: file });
 assert.equal(store.get('neu-schedule-restored-v1'), '[]', 'old-day restores clear on startup');
 
@@ -75,6 +75,11 @@ assert.doesNotMatch(node('timelineGrid').innerHTML, /course-period|course-time/)
 assert.match(node('timelineGrid').innerHTML, /gym-odd/);
 assert.match(node('timelineGrid').innerHTML, /gym-even/);
 assert.match(node('timelineGrid').innerHTML, /period-slot/);
+assert.equal((node('timelineGrid').innerHTML.match(/class="daily-marker /g)||[]).length,2,'only today has outing ticks');
+assert.match(node('timelineGrid').innerHTML, /daily-marker training week[^>]+aria-label="10:30 外出训练"[^>]+top:43.75%/);
+const mealTick = node('timelineGrid').innerHTML.match(/daily-marker meal week[^>]+top:([\d.]+)%/);
+assert.ok(mealTick && Math.abs(Number(mealTick[1])-870/1440*100)<1e-9);
+
 const verifyFullDayAxis = (html, periodClass) => {
   assert.equal((html.match(/class="day-endpoint/g) || []).length, 2);
   assert.match(html, /class="day-endpoint first" style="top:0%">00:00<\/div>/);
@@ -89,6 +94,7 @@ verifyFullDayAxis(node('timelineGrid').innerHTML, 'period-slot');
 assert.match(node('timelineGrid').innerHTML, /class="gym-time-tag aux" style="top:[^"]+">07:00<\/div>/);
 const sundayBand = node('timelineGrid').innerHTML.match(/class="day-lane (gym-(?:odd|even)) [^"]*" style="grid-column:8;grid-row:2"/)?.[1];
 node('nextWeek').listeners.click();
+assert.doesNotMatch(node('timelineGrid').innerHTML,/daily-marker /,'other weeks have no today tick');
 const nextMondayBand = node('timelineGrid').innerHTML.match(/class="day-lane (gym-(?:odd|even)) [^"]*" style="grid-column:2;grid-row:2"/)?.[1];
 assert.ok(sundayBand && nextMondayBand && sundayBand !== nextMondayBand, 'gym backgrounds must alternate across week boundaries');
 node('prevWeek').listeners.click();
@@ -101,6 +107,9 @@ assert.match(node('dayMap').innerHTML, /class="map-course-location">生命B101 �
 assert.match(node('dayMap').innerHTML, /当日时间图/);
 verifyFullDayAxis(node('dayMap').innerHTML, 'map-period');
 assert.match(node('dayMap').innerHTML, /day-progress/);
+assert.equal((node('dayMap').innerHTML.match(/class="daily-marker /g)||[]).length,2);
+assert.match(node('dayMap').innerHTML, /daily-marker training day/);
+assert.match(node('dayMap').innerHTML, /daily-marker meal day/);
 
 
 const openCourse = id => node('dayMap').listeners.click({ target: { closest: s => s === '[data-course]' ? { dataset: { course: String(id) } } : null } });
