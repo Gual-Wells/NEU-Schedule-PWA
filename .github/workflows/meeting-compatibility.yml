@@ -20,6 +20,7 @@ jobs:
           node-version: 24
       - name: Parse browser and Worker modules
         run: |
+          node --check daily-reminders.js
           node --check agenda-core.js
           node --check agenda-client.js
           node --check agenda-upload.js
@@ -57,6 +58,7 @@ jobs:
       - name: Build production Pages assets
         run: |
           node worker/gateway/build.mjs
+          test -s worker/gateway/dist/daily-reminders.js
           test -s worker/gateway/dist/agenda-client.js
           test -s worker/gateway/dist/agenda-upload.js
           test -s worker/gateway/dist/meeting-store.js

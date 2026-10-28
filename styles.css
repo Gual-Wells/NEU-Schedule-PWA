@@ -625,3 +625,14 @@ h2 { margin: 0; font-size: 17px; line-height: 1.2; }
 
 .agenda-detail-actions { margin-top:10px; }
 #agendaDetailSources p { font-size:12px; line-height:1.5; overflow-wrap:anywhere; }
+
+/* Daily outings are passive ticks, separate from the live clock and event blocks. */
+.daily-marker { --marker-ink:#70529e; --marker-fill:#f4eefc; position:absolute; z-index:7; left:0; right:0; height:0; border-top:1px dashed var(--marker-ink); pointer-events:none; }
+.daily-marker.meal { --marker-ink:#a26516; --marker-fill:#fff3db; border-top-style:dotted; }
+.daily-marker::before { content:""; position:absolute; top:-3px; left:1px; width:5px; height:5px; background:var(--marker-ink); transform:rotate(45deg); }
+.daily-marker.meal::before { border-radius:50%; transform:none; }
+.daily-marker-label { position:absolute; top:-19px; right:1px; display:grid; justify-items:center; padding:1px 2px; border:1px solid var(--marker-ink); background:var(--marker-fill); color:var(--marker-ink); font:7px/1.1 Verdana,"Microsoft YaHei",sans-serif; white-space:nowrap; }
+.daily-marker-label strong { font-size:7px; font-weight:600; }
+.daily-marker.day .daily-marker-label { top:-15px; left:8px; right:auto; display:flex; align-items:center; gap:5px; padding:1px 4px; font-size:10px; }
+.daily-marker.day .daily-marker-label strong { font-size:10px; }
+.current-time-line, .day-now-line { z-index:9; }

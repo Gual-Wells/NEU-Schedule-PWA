@@ -3,6 +3,7 @@ import { authRoute, sessionFor } from './auth.js';
 import { readCalendar, validateCalendar } from './calendar.js';
 import { decodeRestores, encodeRestores } from './course-state.js';
 import { agendaRoute, cleanupAgenda, dispatchDigests, agendaBlocksGym } from './agenda.js';
+import { ensureDailyReminders, dailyReminders } from './daily-reminders.js';
 
 const encoder = new TextEncoder();
 const MAX_JOBS = 1800;
@@ -257,11 +258,11 @@ async function route(request, env) {
     const now = Date.now();
     if (!Array.isArray(jobs) || jobs.length > MAX_JOBS || !jobs.every(job => validJob(job, now))) return json({ error: '提醒计划无效' }, 400);
     if (new Set(jobs.map(job => job.id)).size !== jobs.length) return json({ error: '提醒编号重复' }, 400);
-    // Old clients cannot restore individual meeting reminders. Digests have their own delivery table.
-    jobs = jobs.filter(job => !job.id.startsWith('meeting-'));
+    // Server-owned reminders survive old client plans and cannot be overwritten by them.
+    jobs = jobs.filter(job => !job.id.startsWith('meeting-') && !dailyReminders.isDaily(job.id));
     const hash = await sha256(JSON.stringify(jobs));
     if (hash === device.plan_hash) return json({ ok: true, count: jobs.length, unchanged: true });
-    const commands = [env.DB.prepare('DELETE FROM reminders WHERE device_id = ? AND sent_at IS NULL').bind(device.id)];
+    const commands = [env.DB.prepare("DELETE FROM reminders WHERE device_id = ? AND sent_at IS NULL AND reminder_id NOT LIKE 'daily-%'").bind(device.id)];
     for (let i = 0; i < jobs.length; i += 100) {
       const part = jobs.slice(i, i + 100);
       commands.push(env.DB.prepare(`
@@ -304,15 +305,15 @@ async function route(request, env) {
   return json({ error: '未找到接口' }, 404);
 }
 
-async function dispatchDue(env) {
-  const now = Date.now();
+async function dispatchDue(env, now = Date.now(), deliver = send) {
   const { results } = await env.DB.prepare(`
     SELECT r.*, d.endpoint, d.p256dh, d.auth FROM reminders r
     JOIN devices d ON d.id = r.device_id
     WHERE r.due_at <= ? AND r.due_at > ? AND r.attempts < 4
       AND r.sent_at IS NULL AND (r.claim_at IS NULL OR r.claim_at < ?)
+      AND (r.reminder_id NOT LIKE 'daily-%' OR r.due_at > ?)
     ORDER BY r.due_at LIMIT 40
-  `).bind(now, now - 15 * 60000, now - 2 * 60000).all();
+  `).bind(now, now - 15 * 60000, now - 2 * 60000, now - dailyReminders.MAX_LATENESS).all();
   for (const row of results) {
     // A stale/offline client's gym plan must never suggest a window occupied by an agenda item.
     const gymReminder = /^\d{4}-\d\d-\d\d-g/.test(row.reminder_id);
@@ -333,7 +334,9 @@ async function dispatchDue(env) {
     `).bind(now, row.device_id, row.reminder_id, now - 2 * 60000).run();
     if (!claim.meta.changes) continue;
     try {
-      const delivered = await send(row, row.title, row.body, row.ttl, env);
+      const ttl = dailyReminders.isDaily(row.reminder_id)
+        ? Math.min(row.ttl, Math.max(1, Math.ceil((row.due_at + dailyReminders.MAX_LATENESS - now) / 1000))) : row.ttl;
+      const delivered = await deliver(row, row.title, row.body, ttl, env);
       if (!delivered) {
         await env.DB.prepare('DELETE FROM devices WHERE id = ?').bind(row.device_id).run();
       } else {
@@ -365,9 +368,10 @@ export default {
   },
   async scheduled(_event, env) {
     await cleanupAgenda(env);
+    await ensureDailyReminders(env);
     await dispatchDigests(env, send);
     await dispatchDue(env);
   }
 };
 
-export { validJob, validSubscription, pushPayload };
+export { validJob, validSubscription, pushPayload, dispatchDue };

@@ -32,3 +32,7 @@
 先备份 D1 并运行 `pnpm exec wrangler d1 migrations apply neu-schedule-push --remote`。仅首次部署时设置高熵 `ENROLLMENT_KEY` Secret；保留已有 Secret、通行密钥和 VAPID 密钥，避免使登录或推送订阅失效。运行 `pnpm exec wrangler deploy`，随后在仓库根目录运行 `node worker/gateway/build.mjs`，再从 `worker/gateway/` 运行 `../node_modules/.bin/wrangler pages deploy dist --project-name neu-schedule-push-api --branch main`。确认页面与 API 同域。仅首次登记或后台手工重置后的恢复流程，才按 [AUTH_DESIGN.md](AUTH_DESIGN.md) 开启五分钟登记窗口；日常部署不打开登记窗口。
 
 GitHub Pages 只发布 404 页面，旧地址不再提供应用入口。旧主屏幕 PWA 无法沿用新域名的 Cookie、本地存储和推送订阅；新站点需重新加入主屏幕、导入训练记录并开启提醒。项目各模块的经验与复用边界见 [项目经验报告](../docs/PROJECT_EXPERIENCE.md)。
+
+## 每日外出提醒
+
+每分钟 Cron 生成当天 10:30 外出训练、14:30 外出就餐两条固定提醒，复用 reminders 表和现有推送订阅，无数据库迁移。`daily-` 为服务端保留编号：客户端 /sync 不能覆盖或删除，课程调休与事项占用不影响投递。相同设备同一天只投递一次，逾期两分钟停止补发，推送 TTL 同时限制到该期限；通行密钥、设备令牌和 VAPID Secret 保持原配置。
