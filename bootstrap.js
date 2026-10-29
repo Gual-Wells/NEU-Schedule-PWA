@@ -22,7 +22,7 @@
     app.innerHTML = appMarkup;
     app.classList.remove('login-mode');
     const script = document.createElement('script');
-    script.src = './app.js?v=39';
+    script.src = './app.js?v=40';
     document.body.append(script);
   }
   async function load() {
