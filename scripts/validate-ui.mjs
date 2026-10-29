@@ -76,9 +76,10 @@ assert.match(node('timelineGrid').innerHTML, /gym-odd/);
 assert.match(node('timelineGrid').innerHTML, /gym-even/);
 assert.match(node('timelineGrid').innerHTML, /period-slot/);
 assert.equal((node('timelineGrid').innerHTML.match(/class="daily-marker /g)||[]).length,2,'only today has outing ticks');
-assert.match(node('timelineGrid').innerHTML, /daily-marker training week[^>]+aria-label="10:30 外出训练"[^>]+top:43.75%/);
+const trainingTick = node('timelineGrid').innerHTML.match(/daily-marker training week[^>]+aria-label="12:30 外出训练"[^>]+top:([\d.]+)%/);
+assert.ok(trainingTick && Math.abs(Number(trainingTick[1])-750/1440*100)<1e-9);
 const mealTick = node('timelineGrid').innerHTML.match(/daily-marker meal week[^>]+top:([\d.]+)%/);
-assert.ok(mealTick && Math.abs(Number(mealTick[1])-870/1440*100)<1e-9);
+assert.ok(mealTick && Math.abs(Number(mealTick[1])-990/1440*100)<1e-9);
 
 const verifyFullDayAxis = (html, periodClass) => {
   assert.equal((html.match(/class="day-endpoint/g) || []).length, 2);
