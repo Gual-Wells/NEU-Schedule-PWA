@@ -42,6 +42,7 @@ async function commit(env, op) {
     const row=await env.DB.prepare('SELECT * FROM agenda_imports WHERE id=?').bind(op.importId).first();
     if(!row||row.status!=='review'||row.revision!==op.revision)return json({error:'申请已更新，请刷新后确认'},409);
     const result=validateExtraction(JSON.parse(row.result_json),(await importDetail(env,row.id)).images.length,false,true,row.extraction_protocol>=4);
+    if(result.intent==='analysis')return json({error:'图片解读不包含待入表事项'},409);
     const candidate=result.items[0];
     if(!candidate.localTime&&!candidate.dateStart)return json({error:'尚无法确定日期，请用反馈补充线索'},409);
     const value=A.generatedItem(candidate,now),context=JSON.parse(row.recognition_context||'[]');
@@ -92,7 +93,10 @@ async function commit(env, op) {
 }
 
 export function validateExtraction(value,imageCount=1,requireSources=false,single=false,flex=false) {
-  if (!value || !Array.isArray(value.items) || value.items.length > 20 || (single&&value.items.length!==1) || typeof value.summary !== 'string' || value.summary.length > 2000) throw Error('识别结果格式无效');
+  const analysis=value?.intent==='analysis';
+  if (!value || (value.intent!==undefined&&!['agenda','analysis'].includes(value.intent)) || !Array.isArray(value.items) || value.items.length > 20 || (single&&!analysis&&value.items.length!==1) || typeof value.summary !== 'string' || value.summary.length > 2000) throw Error('识别结果格式无效');
+  if(analysis&&(!flex||value.items.length!==0||typeof value.analysis!=='string'||!value.analysis.trim()||value.analysis.length>12000||value.relation?.type!=='new'||value.relation.targetImportId!==null||value.relation.targetItemId!==null))throw Error('图片解读格式无效');
+  if(!analysis&&value.analysis!==undefined&&value.analysis!=='')throw Error('事项结果不应含独立解读');
   const seen = new Set();
   const items = value.items.map(v => {
     if (!idOK(v.key) || seen.has(v.key) || !['activity','deadline'].includes(v.kind) || typeof v.title !== 'string' || !v.title.trim() || v.title.length > 100) throw Error('识别事项无效');
@@ -108,7 +112,7 @@ export function validateExtraction(value,imageCount=1,requireSources=false,singl
     const extra=flex||v.dateStart?{dateStart:v.dateStart||null,dateEnd:v.dateStart?(v.dateEnd||v.dateStart):null,inference:v.inference||''}:{};
     return { ...extra,key:v.key, kind:v.kind, title:v.title, localTime:v.localTime, localEnd:v.localEnd, location:v.location, evidence:v.evidence, question:v.question,sourceImages };
   });
-  return { summary: value.summary, items,...(value.relation?{relation:value.relation}:{}) };
+  return { summary: value.summary, items,...(value.intent?{intent:value.intent,analysis:analysis?value.analysis:''}:{}),...(value.relation?{relation:value.relation}:{}) };
 }
 
 async function runner(request, env, url) {

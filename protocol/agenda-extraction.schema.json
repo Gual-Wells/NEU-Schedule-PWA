@@ -2,11 +2,15 @@
   "type": "object",
   "additionalProperties": false,
   "required": [
+    "intent",
+    "analysis",
     "summary",
     "items",
     "relation"
   ],
   "properties": {
+    "intent": {"type":"string","enum":["agenda","analysis"]},
+    "analysis": {"type":"string","maxLength":12000},
     "summary": {
       "type": "string",
       "maxLength": 2000
@@ -103,7 +107,7 @@
           }
         }
       },
-      "minItems": 1
+      "minItems": 0
     },
     "relation": {
       "type": "object",

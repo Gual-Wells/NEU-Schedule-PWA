@@ -2,6 +2,7 @@
 import {readFile,mkdir,writeFile,rename,readdir,open} from 'node:fs/promises';
 import path from 'node:path';
 import {createHash,randomUUID} from 'node:crypto';
+import {setGlobalProxyFromEnv} from 'node:http';
 const sha=value=>createHash('sha256').update(value).digest('hex');
 const unknown=message=>Object.assign(Error(message),{outcomeUnknown:true});
 export async function loadOpenAIKey(config={}){
@@ -10,7 +11,7 @@ export async function loadOpenAIKey(config={}){
  return value;
 }
 export function configureAPIProxy(config={}){
- if(config.proxyUrl){const url=new URL(config.proxyUrl);if(url.protocol!=='http:'||!['127.0.0.1','localhost'].includes(url.hostname)||url.username||url.password)throw Error('本机API代理配置无效');process.env.HTTPS_PROXY=url.href;process.env.HTTP_PROXY=url.href;process.env.NO_PROXY='localhost,127.0.0.1';process.env.NODE_USE_ENV_PROXY='1';}
+ if(config.proxyUrl){const url=new URL(config.proxyUrl);if(url.protocol!=='http:'||!['127.0.0.1','localhost'].includes(url.hostname)||url.username||url.password)throw Error('本机API代理配置无效');process.env.HTTPS_PROXY=url.href;process.env.HTTP_PROXY=url.href;process.env.NO_PROXY='localhost,127.0.0.1';process.env.NODE_USE_ENV_PROXY='1';return setGlobalProxyFromEnv({http_proxy:url.href,https_proxy:url.href,no_proxy:'localhost,127.0.0.1'});}
 }
 export function responseJSON(response){
  if(response?.status!=='completed')throw Error('模型未完成，原始返回已保存，请核对后处理');
@@ -37,11 +38,11 @@ export async function runOpenAI({config,directory,project,task,instructions,inpu
  const attempt=String((Number(attempts.at(-1))||0)+1).padStart(4,'0'),target=path.join(base,attempt);await mkdir(target);
  // An exclusive durable marker precedes the only paid POST. A lost result never causes another POST.
  const marker=await open(path.join(target,'request.json'),'wx',0o600);await marker.writeFile(JSON.stringify({digest,project,task,model,startedAt:new Date().toISOString(),body}));await marker.sync();await marker.close();
- let response;
+ let response;const started=performance.now();let phase='waiting_for_headers';
  try{
   response=await fetchImpl('https://api.openai.com/v1/responses',{method:'POST',redirect:'error',headers:{authorization:'Bearer '+key,'content-type':'application/json'},body:bodyText,signal:AbortSignal.timeout(config.timeoutMs||600000)});
-  const raw=await response.text();let parsed;try{parsed=JSON.parse(raw);}catch{parsed=null;}
-  const saved={httpStatus:response.status,requestId:response.headers.get('x-request-id'),receivedAt:new Date().toISOString(),response:parsed,raw:parsed?undefined:raw};await atomic(path.join(target,'response.json'),saved);
+  phase='reading_response';const raw=await response.text();let parsed;try{parsed=JSON.parse(raw);}catch{parsed=null;}
+  const saved={httpStatus:response.status,requestId:response.headers.get('x-request-id'),elapsedMs:Math.round(performance.now()-started),receivedAt:new Date().toISOString(),response:parsed,raw:parsed?undefined:raw};await atomic(path.join(target,'response.json'),saved);
   if(parsed?.usage&&config.usageDirectory){
    await mkdir(config.usageDirectory,{recursive:true});const record={project,task,model:parsed.model||model,responseId:parsed.id,requestId:saved.requestId,receivedAt:saved.receivedAt,usage:parsed.usage};
    await atomic(path.join(config.usageDirectory,sha(project+':'+(parsed.id||digest))+'.json'),record);
@@ -49,7 +50,8 @@ export async function runOpenAI({config,directory,project,task,instructions,inpu
   if(!response.ok)throw Error(`OpenAI请求未完成（HTTP ${response.status}${parsed?.error?.code?', '+String(parsed.error.code).replace(/[^a-z0-9_-]/gi,''):''}），没有自动重试`);
   return {value:responseJSON(parsed),response:parsed,reused:false};
  }catch(error){
-  await atomic(path.join(target,'failure.json'),{at:new Date().toISOString(),httpStatus:response?.status??null,errorType:error?.name||'Error',outcomeUnknown:!response||response.status>=500});
+  const causeCodes=[error?.code,error?.cause?.code,...(error?.cause?.errors||[]).map(e=>e.code)].filter(code=>typeof code==='string'&&/^[A-Z0-9_]{1,80}$/.test(code));
+  await atomic(path.join(target,'failure.json'),{at:new Date().toISOString(),httpStatus:response?.status??null,errorType:error?.name||'Error',causeCodes,phase,elapsedMs:Math.round(performance.now()-started),outcomeUnknown:!response||response.status>=500});
   // No raw network errors: exception messages can contain headers or request bodies.
   if(!response)throw unknown('OpenAI连接中断，计费结果待核对，未自动重试');
   if(response.status>=500)error.outcomeUnknown=true;

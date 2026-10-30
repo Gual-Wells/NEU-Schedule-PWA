@@ -104,4 +104,15 @@ assert.match(client.blocks('2026-10-20','day'),/midnight/,'the next date retains
 assert.equal(client.overlaps('2026-10-20',A.localTime('2026-10-20T02:29'),A.localTime('2026-10-20T02:30')),true);
 assert.equal(client.overlaps('2026-10-20',A.localTime('2026-10-20T02:30'),A.localTime('2026-10-20T03:00')),false,'midnight carry-over stops at its finite boundary');
 assert.equal(client.blocks('2026-10-21','week'),'','a real two-date interval must not spread to a third date');
-console.log('Agenda details: separate navigation, end/achieve/cancel, offline recovery, rejection rollback and in-flight refresh race OK');
+remote.imports=[{id:'read-only',status:'review',revision:1,createdAt:now,expiresAt:now+hour,images:[],result:{intent:'analysis',analysis:'12:30 外出训练\n\n16:30 外出就餐 <script>ignored</script>',items:[]}}];
+await client.sync();await flush();client.open();
+assert.match(node('agendaContent').innerHTML,/图片解读已完成/);
+await node('agendaContent').listeners.click({target:{closest:()=>({dataset:{agendaReview:'read-only'}})}});
+assert.match(node('agendaReviewResult').innerHTML,/图片解读 · 已完成/);
+assert.match(node('agendaReviewResult').innerHTML,/12:30 外出训练/);
+assert.match(node('agendaReviewResult').innerHTML,/&lt;script&gt;/);
+assert.equal(node('agendaConfirm').hidden,true);
+assert.equal(node('agendaConfirm').disabled,true);
+const beforeAnalysis=requests.length;await node('agendaConfirm').listeners.click();
+assert.equal(requests.length,beforeAnalysis,'read-only reports never submit an apply request');
+console.log('Agenda details and read-only image analysis: navigation, offline recovery, revisions and agenda isolation OK');

@@ -72,6 +72,29 @@ test('date-only activities and deadlines cover whole campus days, preserve preci
   assert.match(A.digestText(A.digest(applied.items,[],start-A.HOUR)),/2026-10-20 全天/);
 });
 
+test('explicit image analysis is durable, cannot enter the agenda, and can be revised into a real application',async()=>{
+ const {call,sqlite}=setup(),job=await singleJob(call,'analysis');
+ const report={intent:'analysis',analysis:'图1：10月30日有两项个人活动。\n\n12:30 外出训练；16:30 外出就餐。',summary:'测试图片解读',items:[],relation:{type:'new',targetImportId:null,targetItemId:null,reason:'仅解读'}};
+ for(const invalid of [{...report,items:generated().items},{...report,analysis:''},{...generated(),intent:'agenda',analysis:'',items:[]}])assert.equal((await call('/runner/result/'+job.id,invalid,true,job.claim)).status,400);
+ assert.equal((await call('/runner/result/'+job.id,report,true,job.claim)).status,200);
+ const review=await (await call('/imports/'+job.id)).json();
+ assert.equal(review.result.analysis,report.analysis);assert.equal(review.result.intent,'analysis');
+ assert.equal((await call('/agenda/commit',{id:'cannot-apply-analysis',type:'apply',importId:job.id,revision:review.revision})).status,409);
+ assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM agenda_items').get().n,0);
+ assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM agenda_result_versions WHERE import_id=?').get(job.id).n,1);
+ const next=await singleJob(call,'after-analysis');
+ assert(!next.knownApplications.some(v=>v.applicationId===job.id),'read-only reports are not agenda matching candidates');
+ await call('/runner/result/'+next.id,generated(),true,next.claim);
+ const feedback=await call('/imports/'+job.id+'/feedback',{id:'analysis-to-agenda',revision:review.revision,text:'现在把16:30外出就餐作为事项安排'});
+ assert.equal(feedback.status,200);
+ const retry=(await (await call('/runner/claim',{protocol:4},true)).json()).job;
+ assert.equal(retry.id,job.id);assert.equal(retry.generation,2);assert.equal(retry.previousResult.intent,'analysis');
+ assert.equal((await call('/runner/result/'+retry.id,{...generated(),intent:'agenda',analysis:''},true,retry.claim)).status,200);
+ const ready=await (await call('/imports/'+job.id)).json();
+ const applied=await (await call('/agenda/commit',{id:'apply-after-feedback',type:'apply',importId:job.id,revision:ready.revision})).json();
+ assert.equal(applied.items.length,1);assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM agenda_result_versions WHERE import_id=?').get(job.id).n,2);
+});
+
 test('new uploads can complete an earlier unconfirmed application, then update the same item',async()=>{
   const {call,sqlite}=setup(),original=await singleJob(call,'original');
   await call('/runner/result/'+original.id,allDay('activity'),true,original.claim);
