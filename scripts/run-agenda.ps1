@@ -9,7 +9,8 @@ try {
     $env:TEMP = 'D:\CodexStorage\tmp'
     $env:TMP = $env:TEMP
     New-Item -ItemType Directory -Path $env:TEMP -Force | Out-Null
-    & $config.nodePath (Join-Path $PSScriptRoot 'agenda-runner.mjs') $CredentialFile
+    if ($config.openai.proxyUrl) { $env:HTTPS_PROXY=$config.openai.proxyUrl; $env:HTTP_PROXY=$config.openai.proxyUrl; $env:NO_PROXY='localhost,127.0.0.1' }
+    & $config.nodePath --use-env-proxy (Join-Path $PSScriptRoot 'agenda-runner.mjs') $CredentialFile
     if ($LASTEXITCODE -ne 0) { throw "Agenda runner exited $LASTEXITCODE" }
 } finally {
     if ($owned) { $mutex.ReleaseMutex() }

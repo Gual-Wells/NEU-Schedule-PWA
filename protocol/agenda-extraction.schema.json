@@ -51,13 +51,15 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}$"
           },
           "localEnd": {
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}$"
           },
           "location": {
             "type": "string",
@@ -85,13 +87,15 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
           },
           "dateEnd": {
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
           },
           "inference": {
             "type": "string",
