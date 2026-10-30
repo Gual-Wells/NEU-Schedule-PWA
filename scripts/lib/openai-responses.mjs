@@ -3,6 +3,7 @@ import {readFile,mkdir,writeFile,rename,readdir,open} from 'node:fs/promises';
 import path from 'node:path';
 import {createHash,randomUUID} from 'node:crypto';
 import {setGlobalProxyFromEnv} from 'node:http';
+import {readAPIResponse} from './openai-stream.mjs';
 const sha=value=>createHash('sha256').update(value).digest('hex');
 const unknown=message=>Object.assign(Error(message),{outcomeUnknown:true});
 export async function loadOpenAIKey(config={}){
@@ -24,13 +25,13 @@ async function atomic(file,value){const temporary=file+'.'+randomUUID()+'.tmp';a
 export async function runOpenAI({config,directory,project,task,instructions,input,schema,name='task_result',fetchImpl=fetch}){
  const key=await loadOpenAIKey(config),model=config.model||'gpt-6.1-sol';
  if(!/^gpt-[a-z0-9.-]+$/.test(model)||!['none','low','medium','high','xhigh','max'].includes(config.reasoningEffort||'high'))throw Error('OpenAI模型配置无效');
- const body={model,store:false,reasoning:{effort:config.reasoningEffort||'high'},max_output_tokens:config.maxOutputTokens||16384,instructions,input,text:{format:{type:'json_schema',name,strict:true,schema}}};
+ const body={model,store:false,reasoning:{effort:config.reasoningEffort||'high'},max_output_tokens:config.maxOutputTokens||16384,instructions,input,text:{format:{type:'json_schema',name,strict:true,schema}},stream:true};
  const bodyText=JSON.stringify(body),digest=sha(bodyText),base=path.join(directory,'openai');await mkdir(base,{recursive:true});
  const attempts=(await readdir(base)).filter(n=>/^\d{4}$/.test(n)).sort();
  for(const attempt of attempts){
   const previous=path.join(base,attempt),sent=JSON.parse(await readFile(path.join(previous,'request.json'),'utf8').catch(()=>'null'));
   if(!sent)throw unknown('上次API调用准备过程被中断，请核对后处理');
-  if(sent.digest!==digest)throw Error('已发送任务的输入发生变化，停止重复收费');
+  if(sent.digest!==digest&&(!sent.body||sha(JSON.stringify({...sent.body,stream:true}))!==digest))throw Error('已发送任务的输入发生变化，停止重复收费');
   const saved=JSON.parse(await readFile(path.join(previous,'response.json'),'utf8').catch(()=>'null'));
   if(saved){if(saved.httpStatus>=400&&saved.httpStatus<500)continue;return {value:responseJSON(saved.response),response:saved.response,reused:true};}
   throw unknown('上次API调用结果尚未确认，禁止自动重复生成');
@@ -38,11 +39,12 @@ export async function runOpenAI({config,directory,project,task,instructions,inpu
  const attempt=String((Number(attempts.at(-1))||0)+1).padStart(4,'0'),target=path.join(base,attempt);await mkdir(target);
  // An exclusive durable marker precedes the only paid POST. A lost result never causes another POST.
  const marker=await open(path.join(target,'request.json'),'wx',0o600);await marker.writeFile(JSON.stringify({digest,project,task,model,startedAt:new Date().toISOString(),body}));await marker.sync();await marker.close();
- let response;const started=performance.now();let phase='waiting_for_headers';
+ let response,savedResponse=false;const started=performance.now();let phase='waiting_for_headers',headersMs=null,firstEventMs=null,eventCount=0;
  try{
   response=await fetchImpl('https://api.openai.com/v1/responses',{method:'POST',redirect:'error',headers:{authorization:'Bearer '+key,'content-type':'application/json'},body:bodyText,signal:AbortSignal.timeout(config.timeoutMs||600000)});
-  phase='reading_response';const raw=await response.text();let parsed;try{parsed=JSON.parse(raw);}catch{parsed=null;}
-  const saved={httpStatus:response.status,requestId:response.headers.get('x-request-id'),elapsedMs:Math.round(performance.now()-started),receivedAt:new Date().toISOString(),response:parsed,raw:parsed?undefined:raw};await atomic(path.join(target,'response.json'),saved);
+  headersMs=Math.round(performance.now()-started);await atomic(path.join(target,'headers.json'),{httpStatus:response.status,requestId:response.headers.get('x-request-id'),headersMs,receivedAt:new Date().toISOString()});
+  phase='reading_response';const {parsed,raw}=await readAPIResponse(response,target,()=>{eventCount++;firstEventMs??=Math.round(performance.now()-started);});
+  const saved={httpStatus:response.status,requestId:response.headers.get('x-request-id'),headersMs,firstEventMs,eventCount,elapsedMs:Math.round(performance.now()-started),receivedAt:new Date().toISOString(),response:parsed,raw};await atomic(path.join(target,'response.json'),saved);savedResponse=true;
   if(parsed?.usage&&config.usageDirectory){
    await mkdir(config.usageDirectory,{recursive:true});const record={project,task,model:parsed.model||model,responseId:parsed.id,requestId:saved.requestId,receivedAt:saved.receivedAt,usage:parsed.usage};
    await atomic(path.join(config.usageDirectory,sha(project+':'+(parsed.id||digest))+'.json'),record);
@@ -51,9 +53,10 @@ export async function runOpenAI({config,directory,project,task,instructions,inpu
   return {value:responseJSON(parsed),response:parsed,reused:false};
  }catch(error){
   const causeCodes=[error?.code,error?.cause?.code,...(error?.cause?.errors||[]).map(e=>e.code)].filter(code=>typeof code==='string'&&/^[A-Z0-9_]{1,80}$/.test(code));
-  await atomic(path.join(target,'failure.json'),{at:new Date().toISOString(),httpStatus:response?.status??null,errorType:error?.name||'Error',causeCodes,phase,elapsedMs:Math.round(performance.now()-started),outcomeUnknown:!response||response.status>=500});
+  const outcomeUnknown=!response||response.status>=500||(response.ok&&!savedResponse);
+  await atomic(path.join(target,'failure.json'),{at:new Date().toISOString(),httpStatus:response?.status??null,errorType:error?.name||'Error',causeCodes,phase,headersMs,firstEventMs,eventCount,elapsedMs:Math.round(performance.now()-started),outcomeUnknown});
   // No raw network errors: exception messages can contain headers or request bodies.
-  if(!response)throw unknown('OpenAI连接中断，计费结果待核对，未自动重试');
+  if(outcomeUnknown)throw unknown('OpenAI连接中断或返回不完整，计费结果待核对，未自动重试');
   if(response.status>=500)error.outcomeUnknown=true;
   throw error;
  }
