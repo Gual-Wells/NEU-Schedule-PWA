@@ -1,6 +1,6 @@
 # 事项接口与运行器：业务版本 1、附件版本 2、提取版本 4
 
-2026-10-31 云端执行增量见 [AGENDA_CLOUD.md](AGENDA_CLOUD.md)。下文本机执行细则保留为 legacy 路由恢复说明，不能用它推断新 cloud-v1 任务仍依赖电脑。云端开关默认关闭，平台保护凭据绑定与发布核验后才启用。
+2026-10-31 云端执行增量见 [AGENDA_CLOUD.md](AGENDA_CLOUD.md)。下文本机执行细则保留为 legacy 路由恢复说明，不能用它推断新 cloud-v1 任务仍依赖电脑。共享 Secrets Store 绑定与迁移已完成，当前 API_CLOUD_ENABLED=true，Worker及v42网关已实际发布；真实调用状态以统一上线回执为准。
 
 `GET /agenda` 需同域登录会话，返回 `{protocol:1, revision, items, imports, digests}`。所有时刻为 UTC 毫秒，显示与图片日期解析固定 Asia/Shanghai，不依赖运行器所在地。业务响应均 no-store。
 

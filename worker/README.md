@@ -23,7 +23,7 @@
 
 新增同域登录保护的 /agenda、/agenda/commit、/imports，多图批次 /imports/batches，以及独立 Bearer 密钥保护的 /runner/*。模型只写待确认候选；Cron 每日北京时间 07:00 / 22:00 保存并发送未来三日汇总。协议、限额、本机识别任务与部署顺序见 [事项协议](../protocol/AGENDA.md)。
 
-云端图片识别见 [AGENDA_CLOUD.md](../protocol/AGENDA_CLOUD.md)：API_CLOUD_ENABLED 默认关闭，开启后的新申请才标为 cloud-v1，既有行保持 legacy。系列云端时钟通过 ScheduleAPIExecutor.run() 处理一次云任务，原 Cron 只负责既有提醒，项目级持久锁拒绝并发；绑定只在 Worker 运行时解析。0015/0016 迁移保留用户历史。平台凭据、启用、发布与旧本机任务停用由同一次迁移核验完成，不能仅修改配置便声称已迁移。
+云端图片识别见 [AGENDA_CLOUD.md](../protocol/AGENDA_CLOUD.md)：2026-10-31 已应用0015/0016并以 API_CLOUD_ENABLED=true 发布，新申请标为 cloud-v1，既有行不自动迁移。系列云端时钟通过 ScheduleAPIExecutor.run() 处理一次云任务，原 Cron 只负责既有提醒，项目级持久锁拒绝并发；共享 Secrets Store 绑定仅在 Worker 运行时解析。当前 Worker 版本 c479b456-d717-41e3-beda-f4769dc29772，v42 Pages db824bdb；上线核验保留6份事项、6 applied/4 cancelled及原通行密钥。旧本机任务由 root 在统一实测通过后另行停用，本次发布没有擅自停止。
 
 ## 本地验证
 

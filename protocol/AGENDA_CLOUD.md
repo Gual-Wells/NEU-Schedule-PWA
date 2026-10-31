@@ -1,6 +1,6 @@
 # 图片识别的云端执行
 
-云端开关 API_CLOUD_ENABLED 默认为 false。先应用 0015 与 0016，再绑定 SECOND_SERIES_OPENAI_KEY 的 Secrets Store 对象并部署；运行时才调用 binding.get()。已有 Worker OPENAI_API_KEY 可作为显式兼容绑定，浏览器和本机配置不承担新云端凭据传输。Agent 不读取或上传本机明文密钥。开关与绑定配置的准备不代表已经上线。
+2026-10-31 已应用0015/0016、绑定 SECOND_SERIES_OPENAI_KEY 的共享 Secrets Store 并启用 API_CLOUD_ENABLED=true；Worker 版本 c479b456-d717-41e3-beda-f4769dc29772，v42 Pages 发布为 db824bdb。本次依用户明确授权，由 root 通过官方 Wrangler stdin 从本机既有文件安全导入共用密钥，明文未进入前端、Git或日志；Worker运行时才调用 binding.get()。已有 Worker OPENAI_API_KEY 仍保留为显式兼容路径，本次实际使用受保护 Store 绑定。
 
 开启后新建上传的 execution_mode 为 cloud-v1；旧行迁移默认 legacy，不自动改动；用户明确提交反馈时，上次结果已知且云开关启用的同一申请新代次转为 cloud-v1。正在运行或结果未知的调用不能借反馈转换。外部 /runner/claim 只领取 legacy，不能通过请求字段取得 cloud-v1。云端 scheduled 只领取 cloud-v1；不批量重排 failed、review、applied 或 cancelled 历史。正常业务确认、同一事项关联、来源、原文与推断、只读解读和明确完成语义保持。
 
