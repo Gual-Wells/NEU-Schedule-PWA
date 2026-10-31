@@ -6,11 +6,16 @@
   "services": [
     { "binding": "SERIES_USAGE", "service": "the-second-language-api", "entrypoint": "ScheduleUsage" }
   ],
+  "secrets_store_secrets": [{
+    "binding": "SECOND_SERIES_OPENAI_KEY",
+    "store_id": "390f0d98fd864ed7be7b3360d7a50816",
+    "secret_name": "SECOND_SERIES_OPENAI_KEY"
+  }],
   "d1_databases": [
     { "binding": "DB", "database_name": "neu-schedule-push", "database_id": "8d87acfa-cd34-4995-860a-e2b1e589572d", "migrations_dir": "migrations" }
   ],
   "vars": {
-    "API_CLOUD_ENABLED": "false",
+    "API_CLOUD_ENABLED": "true",
     "APP_ORIGIN": "https://neu-schedule-push-api.pages.dev",
     "APP_URL": "https://neu-schedule-push-api.pages.dev/?view=day"
   }
