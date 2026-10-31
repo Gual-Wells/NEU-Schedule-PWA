@@ -67,6 +67,7 @@ test('an explicit legacy feedback request uses cloud after activation without mo
 test('cloud inference saves one terminal response and usage without retaining image request copies',async()=>{
   const {env,sqlite,upload}=fixture();await upload();let calls=0;
   const fetchImpl=async(url,request)=>{calls++;assert.equal(url,'https://api.openai.com/v1/responses');
+    assert.equal(request.redirect,'manual');
     const body=JSON.parse(request.body);assert.equal(body.model,'gpt-6.1-terra');assert.equal(body.reasoning.effort,'xhigh');
     assert.equal(body.max_output_tokens,8192);assert.equal(body.store,false);assert.equal(body.tools,undefined);
     assert.equal(body.input[0].content[1].image_url,'data:image/png;base64,'+image.toString('base64'));return stream();};
@@ -75,6 +76,15 @@ test('cloud inference saves one terminal response and usage without retaining im
   const row=sqlite.prepare('SELECT * FROM api_cloud_runs').get();assert.equal(row.outcome,'completed');
   assert.equal(JSON.parse(row.usage_json).input_tokens,10);assert.equal(JSON.stringify(row).includes(image.toString('base64')),false);
   assert.equal(sqlite.prepare('SELECT result_json FROM agenda_imports').get().result_json.includes('2026-11-02T15:00"'),true);
+});
+
+test('a provider redirect is rejected without following it or automatically resending',async()=>{
+  const {env,sqlite,upload}=fixture();await upload();let calls=0;
+  const fetchImpl=async(url,request)=>{calls++;assert.equal(url,'https://api.openai.com/v1/responses');assert.equal(request.redirect,'manual');
+    return new Response('',{status:307,headers:{location:'https://redirect.invalid/response'}});};
+  const result=await runCloudAgenda(env,{fetchImpl});assert.equal(result.failed,true);assert.equal(result.outcomeUnknown,false);
+  assert.equal(sqlite.prepare('SELECT http_status FROM api_cloud_runs').get().http_status,307);
+  await runCloudAgenda(env,{fetchImpl});assert.equal(calls,1);
 });
 
 test('an interrupted cloud call is visible as unknown and feedback cannot trigger another generation',async()=>{

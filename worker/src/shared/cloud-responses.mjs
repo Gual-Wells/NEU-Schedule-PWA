@@ -108,7 +108,9 @@ export async function runCloudResponses({db,keyBinding,project,task,attempt,inst
   const data=pending.slice(0,end);await db.prepare('INSERT OR IGNORE INTO api_cloud_streams(run_key,seq,data) VALUES(?,?,?)').bind(runKey,seq,data).run();pending=pending.slice(data.length);seq++;
  }}
  try{
-  const response=await fetchImpl('https://api.openai.com/v1/responses',{method:'POST',redirect:'error',headers:{authorization:'Bearer '+key,'content-type':'application/json'},body:bodyText,signal:controller.signal});
+  // workerd rejects redirect:"error" before sending. Manual also prevents a
+  // redirect from forwarding the bearer credential; every non-2xx stops below.
+  const response=await fetchImpl('https://api.openai.com/v1/responses',{method:'POST',redirect:'manual',headers:{authorization:'Bearer '+key,'content-type':'application/json'},body:bodyText,signal:controller.signal});
   headerStatus=response.status;requestId=response.headers.get('x-request-id');
   await db.prepare('UPDATE api_cloud_runs SET http_status=?,request_id=? WHERE project=? AND task=? AND attempt=?').bind(headerStatus,requestId,...ids).run();
   if(!response.ok){
