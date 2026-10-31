@@ -1,6 +1,7 @@
 // Shared second-series wire runtime. Call only inside a project-scoped Cloudflare Worker.
 // No publisher authority, cross-project database binding, local credentials or automatic paid retries.
 import {createParser} from './vendor/eventsource-parser/parse.js';
+import {archiveCloudEvidence,readCloudEvidenceResponse} from './cloud-evidence.mjs';
 export const CLOUD_API_SCHEMA = `
 CREATE TABLE IF NOT EXISTS api_cloud_runs (
  project TEXT NOT NULL, task TEXT NOT NULL, attempt TEXT NOT NULL,
@@ -57,10 +58,10 @@ export function cloudResponseJSON(response){
  try{return JSON.parse(content.filter(item=>item.type==='output_text').map(item=>item.text).join(''));}
  catch{throw problem('模型结果格式未通过，原始结果已保存');}
 }
-export async function readCloudResult({db,project,task,attempt}){
+export async function readCloudResult({db,project,task,attempt,filesBinding}){
  const row=await db.prepare('SELECT * FROM api_cloud_runs WHERE project=? AND task=? AND attempt=?').bind(...identity(project,task,attempt)).first();
  if(!row||row.outcome!=='completed')return null;
- const response=JSON.parse(row.response_json);return {value:cloudResponseJSON(response),response,reused:true};
+ const response=await readCloudEvidenceResponse({storedJSON:row.response_json,filesBinding,streamDigest:row.stream_digest,responseId:row.response_id});return {value:cloudResponseJSON(response),response,reused:true};
 }
 export async function readCloudUsage({db,project,now=()=>Date.now()}){
  const rows=await db.prepare(`SELECT u.input_tokens,u.output_tokens,u.cached_input_tokens,u.responses,u.revision,
@@ -77,7 +78,7 @@ async function resolveKey(binding){
  if(typeof key!=='string'||!/^sk-[A-Za-z0-9_-]+$/.test(key))throw problem('云端API凭据不可用',{configurationMissing:true});
  return key;
 }
-export async function runCloudResponses({db,keyBinding,project,task,attempt,instructions,input,schema,name='task_result',config={},heartbeat,fetchImpl=fetch,now=()=>Date.now()}){
+export async function runCloudResponses({db,keyBinding,project,task,attempt,instructions,input,schema,name='task_result',config={},heartbeat,fetchImpl=fetch,now=()=>Date.now(),filesBinding}){
  if(!/^[a-z0-9-]{1,64}$/.test(project)||typeof task!=='string'||!task||task.length>200||String(attempt).length>100)throw problem('云端任务身份无效');
  const model=config.model||'gpt-6.1-sol',effort=config.reasoningEffort||'xhigh';
  if(!/^gpt-[a-z0-9.-]+$/.test(model)||!['none','low','medium','high','xhigh','max'].includes(effort))throw problem('云端模型配置无效');
@@ -90,7 +91,7 @@ export async function runCloudResponses({db,keyBinding,project,task,attempt,inst
  let row=await db.prepare('SELECT * FROM api_cloud_runs WHERE project=? AND task=? AND attempt=?').bind(...ids).first();
  if(row){
   if(row.request_digest!==requestDigest)throw problem('已发送任务的输入发生变化，未再次调用');
-  if(row.outcome==='completed'){const response=JSON.parse(row.response_json);return {value:cloudResponseJSON(response),response,reused:true};}
+  if(row.outcome==='completed'){const response=await readCloudEvidenceResponse({storedJSON:row.response_json,filesBinding,streamDigest:row.stream_digest,responseId:row.response_id});return {value:cloudResponseJSON(response),response,reused:true};}
   if(row.outcome==='sending'&&now()-row.started_at<timeoutMs+60000)throw problem('本次API任务仍在处理中',{inProgress:true});
   throw problem('上次API结果待核对，未再次调用',{outcomeUnknown:row.outcome!=='rejected'});
  }
@@ -100,7 +101,7 @@ export async function runCloudResponses({db,keyBinding,project,task,attempt,inst
  if(changes(inserted)!==1)throw problem('任务已由另一执行器接管',{inProgress:true});
  const controller=new AbortController();let claimLost=false,headerStatus=null,saved=false,timerBusy=false;
  const timeout=setTimeout(()=>controller.abort(),timeoutMs);
- const beat=heartbeat?setInterval(async()=>{if(timerBusy)return;timerBusy=true;try{if(await heartbeat()===false){claimLost=true;controller.abort();}}catch{claimLost=true;controller.abort();}finally{timerBusy=false;}},60000):null;
+ const beat=heartbeat?setInterval(async()=>{if(timerBusy||controller.signal.aborted)return;timerBusy=true;try{if(await heartbeat()===false){claimLost=true;controller.abort();}}catch{claimLost=true;controller.abort();}finally{timerBusy=false;}},60000):null;
  const runKey=await digest(JSON.stringify(ids));let seq=0,pending='',rawTotal=0,allRaw='',terminal=null,requestId=null;
  async function flush(force=true){while(pending&&(force||pending.length>=262144)){
   let end=Math.min(pending.length,262144);
@@ -137,8 +138,13 @@ export async function runCloudResponses({db,keyBinding,project,task,attempt,inst
   if(!terminal){const tail=decoder.decode();pending+=tail;allRaw+=tail;parser.feed(tail);}await flush();
   if(!terminal||!['completed','failed','incomplete'].includes(terminal.status))throw problem('模型响应缺少完整终态');
   const responseJSON=JSON.stringify(terminal);if(encoder.encode(responseJSON).length>1500000)throw problem('模型结果超过单份保存上限');
-  await db.prepare('UPDATE api_cloud_runs SET outcome=?,finished_at=?,response_id=?,response_json=?,usage_json=?,stream_digest=? WHERE project=? AND task=? AND attempt=?').bind(terminal.status==='completed'?'completed':'rejected',now(),terminal.id||null,responseJSON,terminal.usage?JSON.stringify(terminal.usage):null,await digest(allRaw),...ids).run();saved=true;
+  const streamDigest=await digest(allRaw);
+  await db.prepare('UPDATE api_cloud_runs SET outcome=?,finished_at=?,response_id=?,response_json=?,usage_json=?,stream_digest=? WHERE project=? AND task=? AND attempt=?').bind(terminal.status==='completed'?'completed':'rejected',now(),terminal.id||null,responseJSON,terminal.usage?JSON.stringify(terminal.usage):null,streamDigest,...ids).run();saved=true;
+  // The provider result is already durable. Slow archival must not add model-time
+  // heartbeats; the caller's original completion fence and same-attempt recovery remain.
+  clearTimeout(timeout);if(beat)clearInterval(beat);
   await reader.cancel().catch(()=>{});
+  if(terminal.status==='completed')await archiveCloudEvidence({db,filesBinding,project,task,attempt,response:terminal,responseJSON,rawStream:allRaw,runKey,streamDigest,responseId:terminal.id||null});
   return {value:cloudResponseJSON(terminal),response:terminal,reused:false};
  }catch(error){
   if(saved)throw error;

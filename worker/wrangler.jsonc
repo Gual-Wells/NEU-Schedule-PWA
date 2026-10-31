@@ -4,7 +4,9 @@
   "compatibility_date": "2026-09-01",
   "triggers": { "crons": ["* * * * *"] },
   "services": [
-    { "binding": "SERIES_USAGE", "service": "the-second-language-api", "entrypoint": "ScheduleUsage" }
+    { "binding": "SERIES_USAGE", "service": "the-second-language-api", "entrypoint": "ScheduleUsage" },
+    { "binding": "SERIES_STORAGE", "service": "the-second-language-api", "entrypoint": "ScheduleStorage" },
+    { "binding": "FILES", "service": "second-series-files", "entrypoint": "ScheduleFiles" }
   ],
   "secrets_store_secrets": [{
     "binding": "SECOND_SERIES_OPENAI_KEY",

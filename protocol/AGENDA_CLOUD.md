@@ -8,6 +8,8 @@
 
 共用 wire runtime 为 worker/src/shared/cloud-responses.mjs，数据库由本项目独立 DB 承担。api_cloud_runs 以 project=second-schedule、申请 ID、generation 确定一次调用；API 前先保存请求摘要。原始 SSE、完整终态、实际 usage 先持久保存，再转成待确认候选。请求正文与 base64 图片不持久化到新运行表，原图只沿既有 D1 图片表首次上传后的 72 小时生命周期，不增设图片缓存。
 
+2026-10-31系列存储增量：本项目保持独立D1，小型事项与状态不因统一管理而搬库。云端实际处理后才经`SERIES_STORAGE`→`the-second-language-api/ScheduleStorage`取得固定本项目分配，再由共用`project-storage-client.mjs`读取`SELECT 1.all()`的`meta.size_after`上报数值；未测得大小报告未知，元数据失败不影响候选结果、不重跑模型，空闲时不调用。`FILES`固定为`second-series-files/ScheduleFiles`的本项目文件操作能力，不能指定其他项目作用域、任意URL或数据库；声明、真实部署和文件写读验证分别核实。原图72小时清理及现有提醒保持原业务生命周期，不能因文件能力已绑定就自动永久归档图片或改变删除期限。
+
 2026-10-31 工程兼容修正：Cloudflare workerd 的 fetch 不接受 redirect:error，该参数会在网络发送前同步失败。云端共用客户端改用 redirect:manual，并明确停止所有非2xx（含307），不会把Bearer凭据跟随重定向。此补丁不改模型、档位、输入或业务语义，也不自动重排之前状态未知的任务；运行协议模块SHA为1c8e69b439903689772fdd4d95422508eac366eab93b2f67996ecb88d61929de。
 
 完整响应已保存而业务回写中断时，同一 generation 可从原返回恢复 review，不调用第二次 API，也不需要重建明文 claim。取消和代次冲突不能被恢复逻辑重新打开。网络中断、5xx、断流和云端租约失效均保持 outcome_unknown；用户界面显示“结果待核对”，服务端拒绝以反馈生成新代次。仍在处理的云端任务也暂不接受反馈，待本次计费结果明确后修订。明确拒绝或已保存但格式无效的结果可由用户明确反馈另行生成；不自动重试。
