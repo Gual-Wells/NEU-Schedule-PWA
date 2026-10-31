@@ -1,6 +1,3 @@
 // Transport normalization only: 15:00 and 15:00:00 are the same minute.
 // Nonzero seconds and timezone-bearing strings remain invalid under the business validator.
-export function normalizeAgendaResult(value){
- for(const item of value.items||[])for(const key of ['localTime','localEnd'])if(typeof item[key]==='string'&&/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:00$/.test(item[key]))item[key]=item[key].slice(0,16);
- return value;
-}
+export {normalizeAgendaResult} from '../../worker/src/agenda-api-format.js';

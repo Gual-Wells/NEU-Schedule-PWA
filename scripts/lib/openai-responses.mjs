@@ -31,7 +31,7 @@ export async function runOpenAI({config,directory,project,task,instructions,inpu
  for(const attempt of attempts){
   const previous=path.join(base,attempt),sent=JSON.parse(await readFile(path.join(previous,'request.json'),'utf8').catch(()=>'null'));
   if(!sent)throw unknown('上次API调用准备过程被中断，请核对后处理');
-  if(sent.digest!==digest&&(!sent.body||sha(JSON.stringify({...sent.body,stream:true}))!==digest))throw Error('已发送任务的输入发生变化，停止重复收费');
+   if(sent.digest!==digest&&sent.streamDigest!==digest&&(!sent.body||sha(JSON.stringify({...sent.body,stream:true}))!==digest))throw Error('已发送任务的输入发生变化，停止重复收费');
   const saved=JSON.parse(await readFile(path.join(previous,'response.json'),'utf8').catch(()=>'null'));
   if(saved){if(saved.httpStatus>=400&&saved.httpStatus<500)continue;return {value:responseJSON(saved.response),response:saved.response,reused:true};}
   throw unknown('上次API调用结果尚未确认，禁止自动重复生成');

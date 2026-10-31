@@ -115,6 +115,45 @@ export function validateExtraction(value,imageCount=1,requireSources=false,singl
   return { summary: value.summary, items,...(value.intent?{intent:value.intent,analysis:analysis?value.analysis:''}:{}),...(value.relation?{relation:value.relation}:{}) };
 }
 
+// Only a completed immutable cloud run may reach this internal recovery path.
+// A lost lease can be recovered without the discarded plaintext claim.
+export async function completeCloudAgendaResult(env,{id,generation,value}) {
+  const row=await env.DB.prepare('SELECT p.*,(SELECT COUNT(*) FROM agenda_import_images i WHERE i.import_id=p.id) AS cloud_source_count FROM agenda_imports p WHERE p.id=?').bind(id).first();
+  if(!row||row.execution_mode!=='cloud-v1'||row.generation!==generation||
+    !(row.status==='running'||row.status==='failed'&&row.outcome_unknown===1))return false;
+  const imageCount=row.image_protocol===2?row.cloud_source_count:1;let result;
+  try {
+    result=validateExtraction(value,imageCount,row.image_protocol===2,true,true);
+    if(result.relation)result.relation=validateRelation(result.relation,JSON.parse(row.recognition_context||'[]'));
+  } catch(error) {error.resultInvalid=true;throw error;}
+  const now=Date.now(),text=JSON.stringify(result);
+  const [written]=await env.DB.batch([
+    env.DB.prepare("UPDATE agenda_imports SET status='review',result_json=?,outcome_unknown=0,error=NULL,claim_hash=NULL,lease_until=NULL,revision=revision+1,updated_at=? WHERE id=? AND generation=? AND revision=? AND execution_mode='cloud-v1' AND (status='running' OR (status='failed' AND outcome_unknown=1)) AND EXISTS(SELECT 1 FROM api_cloud_runs r WHERE r.project='second-schedule' AND r.task=agenda_imports.id AND r.attempt=CAST(agenda_imports.generation AS TEXT) AND r.outcome='completed')")
+      .bind(text,now,id,generation,row.revision),
+    env.DB.prepare("INSERT OR IGNORE INTO agenda_result_versions(import_id,generation,result_json,created_at) SELECT id,generation,result_json,? FROM agenda_imports WHERE id=? AND generation=? AND status='review' AND revision=? AND result_json=?")
+      .bind(now,id,generation,row.revision+1,text)
+  ]);
+  return Boolean(written.meta.changes);
+}
+
+// The public runner always uses legacy. Only the scheduled module selects cloud-v1.
+export async function claimAgendaJob(env, capabilities = {protocol:4}, executionMode = 'legacy') {
+  if(!['legacy','cloud-v1'].includes(executionMode))throw Error('识别运行方式无效');
+  if(capabilities.protocol!==undefined&&![1,2,3,4].includes(capabilities.protocol))throw Error('运行器协议版本不支持');
+  if(capabilities.importId!==undefined&&!idOK(capabilities.importId))throw Error('申请编号无效');
+  const now = Date.now();
+    if(executionMode==='legacy')await cleanupAgenda(env, now);
+    const row = await env.DB.prepare("SELECT * FROM agenda_imports WHERE status='queued' AND upload_state='ready' AND execution_mode=? AND outcome_unknown=0 AND processing_deadline>? AND (extraction_protocol<=?) AND (image_protocol=1 OR ?>=2) AND (? IS NULL OR id=?) ORDER BY updated_at,id LIMIT 1").bind(executionMode,now,capabilities.protocol||1,capabilities.protocol||1,capabilities.importId||null,capabilities.importId||null).first();
+    if (!row) return null;
+    const claim = crypto.randomUUID(),context=capabilities.protocol===4?await recognitionContext(env,row):[];
+    const written = await env.DB.prepare("UPDATE agenda_imports SET status='running',extraction_protocol=?,recognition_context=?,generation=generation+1,claim_hash=?,lease_until=?,revision=revision+1,updated_at=? WHERE id=? AND status='queued' AND upload_state='ready' AND processing_deadline>? AND revision=?")
+      .bind(capabilities.protocol===4?4:row.extraction_protocol,JSON.stringify(context),await hash(enc.encode(claim)), now + 5 * 60000, now, row.id, now,row.revision).run();
+    if (!written.meta.changes) return null;
+    const detail=(await importViews(env,[row]))[0];
+    return { protocol:row.image_protocol,executionMode:row.execution_mode,extractionProtocol:capabilities.protocol===4?4:row.extraction_protocol,knownApplications:context,sourceCount:detail.images.length,sourceExpiresAt:row.expires_at,previousResult:detail.result,feedback:detail.feedback,id:row.id,claim,generation:row.generation+1,mime:row.mime,digest:row.digest,note:row.note,referenceAt:row.reference_at,
+      images:(row.expires_at>now?detail.images:[]).map(image=>({...image,path:'/runner/image/'+row.id+'/'+image.id})) };
+}
+
 async function runner(request, env, url) {
   const token = request.headers.get('authorization')?.replace(/^Bearer /, '');
   if (!env.AGENDA_RUNNER_KEY || !token || await hash(enc.encode(token)) !== await hash(enc.encode(env.AGENDA_RUNNER_KEY))) return json({ error: '未授权' }, 401);
@@ -122,17 +161,7 @@ async function runner(request, env, url) {
   if (url.pathname === '/runner/claim' && request.method === 'POST') {
     const capabilities=await input(request);
     if(capabilities.protocol!==undefined&&![1,2,3,4].includes(capabilities.protocol))return json({error:'运行器协议版本不支持'},409);
-    if(capabilities.importId!==undefined&&!idOK(capabilities.importId))throw Error('申请编号无效');
-    await cleanupAgenda(env, now);
-    const row = await env.DB.prepare("SELECT * FROM agenda_imports WHERE status='queued' AND upload_state='ready' AND processing_deadline>? AND (extraction_protocol<=?) AND (image_protocol=1 OR ?>=2) AND (? IS NULL OR id=?) ORDER BY updated_at,id LIMIT 1").bind(now,capabilities.protocol||1,capabilities.protocol||1,capabilities.importId||null,capabilities.importId||null).first();
-    if (!row) return json({ job: null });
-    const claim = crypto.randomUUID(),context=capabilities.protocol===4?await recognitionContext(env,row):[];
-    const written = await env.DB.prepare("UPDATE agenda_imports SET status='running',extraction_protocol=?,recognition_context=?,generation=generation+1,claim_hash=?,lease_until=?,revision=revision+1,updated_at=? WHERE id=? AND status='queued' AND upload_state='ready' AND processing_deadline>? AND revision=?")
-      .bind(capabilities.protocol===4?4:row.extraction_protocol,JSON.stringify(context),await hash(enc.encode(claim)), now + 5 * 60000, now, row.id, now,row.revision).run();
-    if (!written.meta.changes) return json({ job: null });
-    const detail=await importDetail(env,row.id);
-    return json({ job: { protocol:row.image_protocol,extractionProtocol:capabilities.protocol===4?4:row.extraction_protocol,knownApplications:context,sourceCount:detail.images.length,sourceExpiresAt:row.expires_at,previousResult:detail.result,feedback:detail.feedback,id:row.id,claim,generation:row.generation+1,mime:row.mime,digest:row.digest,note:row.note,referenceAt:row.reference_at,
-      images:(row.expires_at>now?detail.images:[]).map(image=>({...image,path:'/runner/image/'+row.id+'/'+image.id})) } });
+    return json({job:await claimAgendaJob(env,capabilities,'legacy')});
   }
   const match = url.pathname.match(/^\/runner\/(image|heartbeat|result|fail)\/([A-Za-z0-9_-]{1,90})(?:\/([A-Za-z0-9_-]{1,90}))?$/);
   if (!match) return json({ error: '未找到接口' }, 404);
@@ -154,7 +183,8 @@ async function runner(request, env, url) {
     if(result.relation)result.relation=validateRelation(result.relation,JSON.parse(row.recognition_context||'[]'));
     sql = "status='review',result_json=?,claim_hash=NULL,lease_until=NULL,revision=revision+1,updated_at=?"; args = [JSON.stringify(result), now];
   } else if (action === 'fail') {
-    sql = "status='failed',error=?,claim_hash=NULL,lease_until=NULL,revision=revision+1,updated_at=?"; args = ['识别未完成，可对本申请提交反馈后重试。', now];
+    const failure=await input(request),unknown=failure.outcomeUnknown===true;
+    sql = "status='failed',outcome_unknown=?,error=?,claim_hash=NULL,lease_until=NULL,revision=revision+1,updated_at=?"; args = [unknown?1:0,unknown?'API结果待核对，暂不重复识别。':'识别未完成，可对本申请提交反馈后重试。', now];
   } else return json({ error: '未找到接口' }, 404);
   const update=env.DB.prepare(`UPDATE agenda_imports SET ${sql} WHERE id=? AND status='running' AND revision=? AND claim_hash=? AND lease_until>? AND processing_deadline>?`)
     .bind(...args,id,row.revision,row.claim_hash,now,now);
@@ -218,7 +248,7 @@ export async function agendaRoute(request, env) {
 
 export async function cleanupAgenda(env, now = Date.now()) {
   await env.DB.batch([
-    env.DB.prepare("UPDATE agenda_imports SET status='failed',error='识别服务中断或图片已过期，请重新上传。',claim_hash=NULL,lease_until=NULL,revision=revision+1,updated_at=? WHERE (status='running' AND lease_until<=?) OR (status='queued' AND (processing_deadline<=? OR ((upload_state='draft' OR result_json IS NULL) AND expires_at<=?)))").bind(now, now, now,now),
+    env.DB.prepare("UPDATE agenda_imports SET status='failed',outcome_unknown=CASE WHEN status='running' AND execution_mode='cloud-v1' THEN 1 ELSE outcome_unknown END,error=CASE WHEN status='running' AND execution_mode='cloud-v1' THEN 'API结果待核对，暂不重复识别。' ELSE '识别服务中断或图片已过期，请重新上传。' END,claim_hash=NULL,lease_until=NULL,revision=revision+1,updated_at=? WHERE (status='running' AND lease_until<=?) OR (status='queued' AND (processing_deadline<=? OR ((upload_state='draft' OR result_json IS NULL) AND expires_at<=?)))").bind(now, now, now,now),
     env.DB.prepare('DELETE FROM agenda_import_chunks WHERE import_id IN (SELECT id FROM agenda_imports WHERE expires_at<=?)').bind(now),
     env.DB.prepare('DELETE FROM agenda_image_chunks WHERE image_id IN (SELECT i.id FROM agenda_import_images i JOIN agenda_imports p ON p.id=i.import_id WHERE p.expires_at<=?)').bind(now)
   ]);

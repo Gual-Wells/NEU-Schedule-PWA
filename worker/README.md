@@ -23,6 +23,8 @@
 
 新增同域登录保护的 /agenda、/agenda/commit、/imports，多图批次 /imports/batches，以及独立 Bearer 密钥保护的 /runner/*。模型只写待确认候选；Cron 每日北京时间 07:00 / 22:00 保存并发送未来三日汇总。协议、限额、本机识别任务与部署顺序见 [事项协议](../protocol/AGENDA.md)。
 
+云端图片识别见 [AGENDA_CLOUD.md](../protocol/AGENDA_CLOUD.md)：API_CLOUD_ENABLED 默认关闭，开启后的新申请才标为 cloud-v1，既有行保持 legacy。系列云端时钟通过 ScheduleAPIExecutor.run() 处理一次云任务，原 Cron 只负责既有提醒，项目级持久锁拒绝并发；绑定只在 Worker 运行时解析。0015/0016 迁移保留用户历史。平台凭据、启用、发布与旧本机任务停用由同一次迁移核验完成，不能仅修改配置便声称已迁移。
+
 ## 本地验证
 
 在 `worker/` 中运行 `pnpm install --frozen-lockfile`、`pnpm test`、`pnpm exec wrangler deploy --dry-run`、`pnpm exec wrangler d1 migrations apply neu-schedule-push --local`。本地 Worker 用 `pnpm exec wrangler dev --local --ip 127.0.0.1 --port 8791 --var ENROLLMENT_KEY:local-test` 启动。仓库根目录的 `scripts/integration-auth-local.mjs` 验证关闭窗口；执行 `worker/admin/open-enrollment.sql` 后可验证开启窗口和完整 WebAuthn 登记/登录；`worker/admin/reset-auth.sql` 验证重置后仍为关闭状态。

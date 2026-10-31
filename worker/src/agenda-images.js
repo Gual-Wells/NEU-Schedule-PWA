@@ -13,7 +13,7 @@ export async function importViews(env,rows) {
 }
 function importView(row,images=[]) {
   const attached=row.image_protocol===2?images:[{id:'legacy',position:1,mime:row.mime,digest:row.digest,byte_length:row.byte_length,received_at:row.created_at}];
-  return {id:row.id,canonicalId:row.canonical_id||row.id,extractionProtocol:row.extraction_protocol,protocol:row.image_protocol||1,status:row.status,uploadState:row.upload_state||'ready',revision:row.revision,note:row.note,referenceAt:row.reference_at,
+  return {id:row.id,canonicalId:row.canonical_id||row.id,executionMode:row.execution_mode||'legacy',outcomeUnknown:row.outcome_unknown===1,extractionProtocol:row.extraction_protocol,protocol:row.image_protocol||1,status:row.status,uploadState:row.upload_state||'ready',revision:row.revision,note:row.note,referenceAt:row.reference_at,
     createdAt:row.created_at,expiresAt:row.expires_at,error:row.error,result:row.result_json?JSON.parse(row.result_json):null,
     images:attached.map(image=>({id:image.id,position:image.position,digest:image.digest,mime:image.mime,byteLength:image.byte_length,receivedAt:image.received_at,
       url:row.image_protocol===2?'/imports/'+row.id+'/images/'+image.id:'/imports/'+row.id+'/image'}))};
@@ -38,7 +38,7 @@ export async function createBatch(request,env) {
   const id=crypto.randomUUID(),commands=[env.DB.prepare("INSERT INTO agenda_imports(id,client_nonce,status,digest,mime,byte_length,note,reference_at,expires_at,created_at,updated_at,image_protocol,upload_state) VALUES(?,?,'queued',?,'application/x-agenda-bundle',?,?,?,?,?,?,2,'draft')")
     .bind(id,value.nonce,digest,total,value.note,now,now+3*DAY,now,now)];
   for(const image of images)commands.push(env.DB.prepare('INSERT INTO agenda_import_images(id,import_id,position,digest,mime,byte_length) VALUES(?,?,?,?,?,?)').bind(image.id,id,image.position,image.digest,image.mime,image.byteLength));
-  commands.push(env.DB.prepare('UPDATE agenda_imports SET extraction_protocol=4,processing_deadline=expires_at WHERE id=?').bind(id));
+  commands.push(env.DB.prepare('UPDATE agenda_imports SET extraction_protocol=4,processing_deadline=expires_at,execution_mode=? WHERE id=?').bind(env.API_CLOUD_ENABLED==='true'?'cloud-v1':'legacy',id));
   try{await env.DB.batch(commands);}catch{
     const replay=await env.DB.prepare('SELECT * FROM agenda_imports WHERE client_nonce=?').bind(value.nonce).first();
     if(replay?.image_protocol===2&&replay.digest===digest)return json(await importDetail(env,replay.id));
@@ -115,7 +115,7 @@ export async function legacyUpload(request, env, url) {
   const commands = [env.DB.prepare("INSERT INTO agenda_imports(id,client_nonce,status,digest,mime,byte_length,note,reference_at,expires_at,created_at,updated_at) VALUES(?,?,'queued',?,?,?,?,?,?,?,?)")
     .bind(id, nonce, digest, mime, bytes.length, note, now, now + 3 * DAY, now, now)];
   for (let offset = 0, index = 0; offset < bytes.length; offset += CHUNK, index++) commands.push(env.DB.prepare('INSERT INTO agenda_import_chunks VALUES(?,?,?)').bind(id, index, bytes.slice(offset, offset + CHUNK).buffer));
-  commands.push(env.DB.prepare('UPDATE agenda_imports SET extraction_protocol=4,processing_deadline=expires_at WHERE id=?').bind(id));
+  commands.push(env.DB.prepare('UPDATE agenda_imports SET extraction_protocol=4,processing_deadline=expires_at,execution_mode=? WHERE id=?').bind(env.API_CLOUD_ENABLED==='true'?'cloud-v1':'legacy',id));
   try { await env.DB.batch(commands); }
   catch (error) {
     const replay = await env.DB.prepare('SELECT * FROM agenda_imports WHERE client_nonce=?').bind(nonce).first();

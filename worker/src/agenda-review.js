@@ -10,6 +10,8 @@ export async function feedback(request,env,id) {
   if(previous)return previous.request_hash===digest?json(await importDetail(env,id)):json({error:'操作编号已被使用'},409);
   const row=await env.DB.prepare('SELECT * FROM agenda_imports WHERE id=?').bind(id).first();
   if(!row||row.status==='cancelled'||row.upload_state!=='ready'||row.revision!==value.revision)return json({error:'申请已更新，请刷新后提交反馈'},409);
+  if(row.outcome_unknown)return json({error:'本次API结果待核对，暂不能通过反馈重复识别'},409);
+  if(row.status==='running'&&(row.execution_mode==='cloud-v1'||env.API_CLOUD_ENABLED==='true'))return json({error:'图片正在识别，请待本次结果明确后再反馈'},409);
   if(row.expires_at<=now&&!row.result_json)return json({error:'原图已过期且没有可修订结果，请重新提交图片'},409);
   const [linked,history,queued]=await Promise.all([
     applicationItems(env,id).then(results=>({results})),
@@ -24,7 +26,8 @@ export async function feedback(request,env,id) {
     env.DB.prepare('INSERT INTO agenda_operations VALUES(?,?,?,?)').bind(value.id,digest,'{}',now),
     env.DB.prepare('INSERT INTO agenda_review_guards VALUES(?,?,?,?,?,?)').bind(value.id,id,row.revision,row.status,target?.id||null,target?.revision||null),
     env.DB.prepare('INSERT INTO agenda_feedback VALUES(?,?,?,?,?)').bind(value.id,id,value.text.trim(),row.result_json,now),
-    env.DB.prepare("UPDATE agenda_imports SET status='queued',extraction_protocol=4,processing_deadline=?,claim_hash=NULL,lease_until=NULL,error=NULL,revision=revision+1,updated_at=? WHERE id=?").bind(now+3*86400000,now,id)
+    env.DB.prepare("UPDATE agenda_imports SET status='queued',extraction_protocol=4,processing_deadline=?,execution_mode=?,claim_hash=NULL,lease_until=NULL,error=NULL,revision=revision+1,updated_at=? WHERE id=? AND revision=? AND generation=? AND status=? AND outcome_unknown=0")
+      .bind(now+3*86400000,env.API_CLOUD_ENABLED==='true'?'cloud-v1':row.execution_mode,now,id,row.revision,row.generation,row.status)
   ];
   try{await env.DB.batch(commands);}catch{
     const replay=await env.DB.prepare('SELECT request_hash FROM agenda_operations WHERE id=?').bind(value.id).first();

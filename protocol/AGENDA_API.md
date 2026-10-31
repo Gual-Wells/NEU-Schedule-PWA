@@ -1,5 +1,7 @@
 # 事项接口与运行器：业务版本 1、附件版本 2、提取版本 4
 
+2026-10-31 云端执行增量见 [AGENDA_CLOUD.md](AGENDA_CLOUD.md)。下文本机执行细则保留为 legacy 路由恢复说明，不能用它推断新 cloud-v1 任务仍依赖电脑。云端开关默认关闭，平台保护凭据绑定与发布核验后才启用。
+
 `GET /agenda` 需同域登录会话，返回 `{protocol:1, revision, items, imports, digests}`。所有时刻为 UTC 毫秒，显示与图片日期解析固定 Asia/Shanghai，不依赖运行器所在地。业务响应均 no-store。
 
 `POST /agenda/commit` 还需匹配 Origin。操作均带 id（ASCII 请求 ID）和 protocol:1。create 包含恰好一项的 items；apply 仅含 importId 和 revision，不允许传 items，服务端直接采用该版本保留的生成结果。每个待创建事项包含 key、kind、title、anchorAt、explicitEndAt、location、evidence；kind 为 activity 或 deadline。标题最长 100 字符，地点 200，原文证据 1200。每次只生成或添加一份事项。resolve / cancel 使用 itemId、at；完成允许最长 31 天内离线补传，未来时间最多容忍一分钟。DDL 可以提前达成；活动开始前不能结束。只允许窗口开始前取消，之后使用完成或结束。同 ID 不同内容和版本冲突返回 409，非法字段返回 400，未登录返回 401。

@@ -75,9 +75,9 @@
         ${v.evidence || v.sourceImportId || v.sources?.length ? `<details class="agenda-source-details"><summary>原文与来源</summary>${v.evidence ? `<p>${esc(v.evidence)}</p>` : ''}${sourceLinks(v)}</details>` : ''}
         <div class="push-actions"><button type="button" data-agenda-detail="${esc(v.id)}">查看详情</button>${!ended && (v.kind === 'deadline' || Date.now() >= v.anchorAt) ? `<button type="button" data-agenda-resolve="${esc(v.id)}">${v.kind === 'deadline' ? 'DDL 达成' : '结束活动'}</button>` : ''}${!ended && Date.now() < w.from ? `<button type="button" data-agenda-cancel="${esc(v.id)}">取消安排</button>` : ''}</div></article>`;
     }).join('');
-    const importNames = {queued:'等待本机识别',running:'正在识别',review:'待确认入表',applied:'已入表',failed:'识别失败',cancelled:'已取消'};
+    const importNames = {queued:'等待识别',running:'正在识别',review:'待确认入表',applied:'已入表',failed:'识别失败',cancelled:'已取消'};
     $('agendaContent').innerHTML = `<h3>待处理事项 · ${pending.length}</h3>${cards(pending) || '<p>暂无待处理事项</p>'}
-      <h3>图片申请</h3>${state.imports.filter(v => v.status !== 'cancelled').map(v => `<article class="agenda-card"><strong>${v.uploadState === 'draft' && v.status === 'queued' ? '等待补传图片' : v.status==='review'&&v.result?.intent==='analysis' ? '图片解读已完成' : importNames[v.status]}</strong><small>${A.format(v.createdAt)}${v.error ? ' · ' + esc(v.error) : ''}</small><div class="push-actions">${v.uploadState !== 'draft' ? `<button type="button" data-agenda-review="${esc(v.id)}">${v.status === 'review' ? v.result?.intent==='analysis' ? '查看解读' : '审核并确认' : '查看申请'}</button>` : ''}${v.status !== 'applied' && !v.linkedItemIds?.length ? `<button type="button" data-import-cancel="${esc(v.id)}">取消申请</button>` : ''}</div></article>`).join('') || '<p>暂无图片申请</p>'}
+      <h3>图片申请</h3>${state.imports.filter(v => v.status !== 'cancelled').map(v => `<article class="agenda-card"><strong>${v.uploadState === 'draft' && v.status === 'queued' ? '等待补传图片' : v.status==='review'&&v.result?.intent==='analysis' ? '图片解读已完成' : v.outcomeUnknown ? '结果待核对' : v.status==='queued' ? v.executionMode==='cloud-v1' ? '等待云端识别' : '等待本机识别' : importNames[v.status]}</strong><small>${A.format(v.createdAt)}${v.error ? ' · ' + esc(v.error) : ''}</small><div class="push-actions">${v.uploadState !== 'draft' ? `<button type="button" data-agenda-review="${esc(v.id)}">${v.status === 'review' ? v.result?.intent==='analysis' ? '查看解读' : '审核并确认' : '查看申请'}</button>` : ''}${v.status !== 'applied' && !v.linkedItemIds?.length ? `<button type="button" data-import-cancel="${esc(v.id)}">取消申请</button>` : ''}</div></article>`).join('') || '<p>暂无图片申请</p>'}
       <details><summary>已完成或取消 · ${done.length}</summary>${cards(done)}</details>
       <h3 id="agendaDigestHeading">早晚汇总 <small>07:00 / 22:00</small></h3>${state.digests.map(v => `<details class="agenda-card"><summary>${A.format(v.slotAt)} · ${v.entries.length} 项</summary><pre>${esc(A.digestText(v.entries))}</pre></details>`).join('') || '<p>暂无汇总记录</p>'}`;
   }
@@ -149,7 +149,7 @@
     const result = job.result, analysis = result?.intent==='analysis', one = result?.items?.length === 1 ? result.items[0] : null, pending = ['queued','running'].includes(job.status);
     let schedule = '', valid = false;
     if (one && (one.localTime || one.dateStart)) try { schedule = windowText(A.generatedItem(one)); valid = true; } catch (error) { schedule = error.message; }
-    const heading = pending ? one||analysis ? '正在生成新版本' : job.status === 'queued' ? '等待本机识别' : '正在识别' : job.status === 'failed' ? '识别失败' : job.status === 'applied' ? '此申请已入表' : job.status === 'cancelled' ? '此申请已取消' : analysis ? '图片解读 · 已完成' : '生成事项 · 待确认';
+    const heading = pending ? one||analysis ? '正在生成新版本' : job.status === 'queued' ? job.executionMode==='cloud-v1' ? '等待云端识别' : '等待本机识别' : '正在识别' : job.outcomeUnknown ? '结果待核对' : job.status === 'failed' ? '识别失败' : job.status === 'applied' ? '此申请已入表' : job.status === 'cancelled' ? '此申请已取消' : analysis ? '图片解读 · 已完成' : '生成事项 · 待确认';
     const sourceImages = job.expiresAt <= Date.now() ? '原图已过期' : (job.images || []).map(image => `<a target="_blank" rel="noopener" href="${esc(image.url)}">查看图 ${image.position}</a>`).join(' ');
     const sourceExpiry = job.expiresAt > Date.now() ? `<small>原图保留至 ${A.format(job.expiresAt)}</small>` : '';
     $('agendaReviewResult').innerHTML = `<h3>${heading}</h3>${one ? `
@@ -169,8 +169,8 @@
     $('agendaConfirm').hidden = job.status !== 'review'||analysis; $('agendaConfirm').disabled = !valid||analysis;
     $('agendaConfirm').textContent = job.linkedItemIds?.length || result?.relation?.type === 'update' ? '确认更新原事项' : '确认此事项入表';
     const target = state.items.find(v => job.linkedItemIds?.includes(v.id)), ended = target && (target.resolvedAt != null || target.cancelledAt != null);
-    $('agendaSendFeedback').disabled = job.status === 'cancelled' || ended || job.linkedItemIds?.length > 1;
-    $('agendaFeedback').disabled = Boolean(ended);
+    $('agendaSendFeedback').disabled = job.status === 'cancelled' || ended || job.outcomeUnknown || job.executionMode==='cloud-v1'&&job.status==='running' || job.linkedItemIds?.length > 1;
+    $('agendaFeedback').disabled = Boolean(ended||job.outcomeUnknown||job.executionMode==='cloud-v1'&&job.status==='running');
     if (ended) $('agendaReviewStatus').textContent = (target.cancelledAt != null ? '事项已取消' : '事项已完成') + ' · 反馈已关闭';
   }
   function editor() {
